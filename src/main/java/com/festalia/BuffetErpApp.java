@@ -1,5 +1,12 @@
 package com.festalia;
 
+import com.festalia.calendario.CalendarioPanel;
+import com.festalia.calendario.DetalhesReservaDialog;
+import com.festalia.calendario.ReservaConflitoValidator;
+import com.festalia.financeiro.FinanceiroDAO;
+import com.festalia.financeiro.GestaoFinanceiraDialog;
+import com.festalia.financeiro.ResumoFinanceiroOS;
+
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
 import javax.swing.border.EmptyBorder;
@@ -20,6 +27,7 @@ import java.nio.file.StandardCopyOption;
 import java.sql.SQLException;
 import java.text.NumberFormat;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
@@ -30,8 +38,9 @@ import java.util.Locale;
  * Interface Gráfica Principal do Festalia ERP v2.0 com suporte a SQLite.
  * Organizada em abas:
  * 1. Nova Ordem de Serviço & Emissão PDF
- * 2. Histórico de Eventos & Faturamento
- * 3. Portfólio de Cardápios & Tabela de Preços
+ * 2. 📅 Calendário de Reservas (Mês, Semana, Dia & Prevenção de Conflitos)
+ * 3. Histórico de Eventos & Faturamento
+ * 4. Portfólio de Cardápios & Tabela de Preços
  */
 public class BuffetErpApp extends JFrame {
 
@@ -42,8 +51,14 @@ public class BuffetErpApp extends JFrame {
 
     private final CardapioDAO cardapioDAO = new CardapioDAO();
     private final OrdemServicoDAO ordemServicoDAO = new OrdemServicoDAO();
+    private final FinanceiroDAO financeiroDAO = new FinanceiroDAO();
 
     private final List<Cardapio> listaCardapios = new ArrayList<>();
+
+    // Gerenciador de Abas e Calendário
+    private JTabbedPane abas;
+    private CalendarioPanel painelCalendario;
+    private int idOrdemServicoEmEdicao = 0;
 
     // Componentes da Aba 1 (Nova OS)
     private JTextField txtNomeBuffet;
@@ -55,6 +70,9 @@ public class BuffetErpApp extends JFrame {
     private JTextField txtCliente;
     private JTextField txtTelefone;
     private JTextField txtDataEvento;
+    private JComboBox<String> cbHorarioInicio;
+    private JComboBox<String> cbHorarioFim;
+    private JComboBox<String> cbTipoEvento;
     private JTextField txtLocal;
     private JTextField txtConvidados;
     private JTextField txtPrecoPorPessoa;
@@ -72,6 +90,7 @@ public class BuffetErpApp extends JFrame {
     private JTable tabelaHistorico;
     private DefaultTableModel modelHistorico;
     private JLabel lblTotalEventos;
+    private JLabel lblResumoInadimplenciaGeral;
     private JLabel lblTotalFaturamento;
 
     // Componentes da Aba 3 (Portfólio de Cardápios)
@@ -108,7 +127,8 @@ public class BuffetErpApp extends JFrame {
         setMinimumSize(new Dimension(880, 680));
         setLocationRelativeTo(null);
 
-        Image logoImg = carregarImagemLogoRaw();
+        // Ícone fixo da janela: Sempre a Marca Oficial do Festalia ERP
+        Image logoImg = carregarImagemOficialFestalia();
         if (logoImg != null) {
             setIconImage(logoImg);
         }
@@ -128,16 +148,35 @@ public class BuffetErpApp extends JFrame {
         painelGeral.add(criarCabecalhoPrincipal(), BorderLayout.NORTH);
 
         // Abas principais
-        JTabbedPane abas = new JTabbedPane();
+        abas = new JTabbedPane();
         abas.setFont(new Font("Segoe UI", Font.BOLD, 13));
 
-        abas.addTab("  Nova Ordem de Serviço  ", criarAbaNovaOS());
-        abas.addTab("  Histórico & Faturamento  ", criarAbaHistorico());
-        abas.addTab("  Portfólio de Cardápios & Preços  ", criarAbaPortfólio());
+        abas.addTab("  Nova Ordem de Serviço", com.festalia.util.IconesFestalia.mais(16, COR_AZUL_FESTALIA), criarAbaNovaOS());
+        abas.addTab("  Calendário de Reservas", com.festalia.util.IconesFestalia.calendario(16, COR_AZUL_FESTALIA), criarAbaCalendario());
+        abas.addTab("  Histórico & Faturamento", com.festalia.util.IconesFestalia.pdf(16, COR_AZUL_FESTALIA), criarAbaHistorico());
+        abas.addTab("  Portfólio de Cardápios & Preços", com.festalia.util.IconesFestalia.cardapio(16, COR_AZUL_FESTALIA), criarAbaPortfólio());
 
         painelGeral.add(abas, BorderLayout.CENTER);
 
         setContentPane(painelGeral);
+    }
+
+    private JPanel criarAbaCalendario() {
+        painelCalendario = new CalendarioPanel(ordemServicoDAO, cardapioDAO, new DetalhesReservaDialog.ReservaListener() {
+            @Override
+            public void onReservaAlterada() {
+                carregarTabelaHistorico();
+            }
+
+            @Override
+            public void onSolicitarEdicao(OrdemServico os) {
+                carregarOSParaEdicao(os);
+                if (abas != null) {
+                    abas.setSelectedIndex(0);
+                }
+            }
+        });
+        return painelCalendario;
     }
 
     private JPanel criarCabecalhoPrincipal() {
@@ -148,15 +187,15 @@ public class BuffetErpApp extends JFrame {
         JPanel painelEsquerda = new JPanel(new FlowLayout(FlowLayout.LEFT, 12, 0));
         painelEsquerda.setOpaque(false);
 
-        // Logo oficial Festalia ERP visível no sistema
-        ImageIcon logoIcon = carregarIconeLogo(52, 52);
+        // Logo oficial Festalia ERP FIXA no sistema (Marca do programa)
+        ImageIcon logoIcon = carregarIconeOficialFestalia(52, 52);
         if (logoIcon != null) {
             JLabel lblLogo = new JLabel(logoIcon);
             lblLogo.setBorder(new CompoundBorder(
                     new LineBorder(new Color(218, 224, 233), 1, true),
                     new EmptyBorder(2, 2, 2, 2)
             ));
-            lblLogo.setToolTipText("Festalia ERP - Gestão Profissional de Buffets e Eventos");
+            lblLogo.setToolTipText("Festalia ERP - Logotipo Oficial do Sistema (Marca Registrada)");
             painelEsquerda.add(lblLogo);
         }
 
@@ -270,6 +309,10 @@ public class BuffetErpApp extends JFrame {
         painelLogo.setOpaque(false);
 
         String logoSalva = DatabaseManager.obterConfiguracao("buffet.logo_path", "");
+        if (logoSalva != null && logoSalva.toLowerCase().contains("mendez")) {
+            logoSalva = "";
+            DatabaseManager.salvarConfiguracao("buffet.logo_path", "");
+        }
         txtCaminhoLogoBuffet = new JTextField(logoSalva);
         txtCaminhoLogoBuffet.putClientProperty("JTextField.placeholderText", "Padrão do Sistema (ou clique em 'Selecionar Imagem...' para customizar)");
         txtCaminhoLogoBuffet.setEditable(false);
@@ -381,28 +424,60 @@ public class BuffetErpApp extends JFrame {
         txtLocal.putClientProperty("JTextField.placeholderText", "Nome do salão ou endereço");
         painel.add(txtLocal, gbc);
 
-        // Linha 6: Convidados e Preço/Pessoa
+        // Linha 6: Faixa de Horário e Tipo de Evento
         gbc.gridx = 0; gbc.gridy = 6; gbc.weightx = 0.12;
-        painel.add(new JLabel("Qtd. Convidados: *"), gbc);
+        painel.add(new JLabel("Faixa de Horário: *"), gbc);
 
         gbc.gridx = 1; gbc.gridy = 6; gbc.weightx = 0.38;
+        JPanel painelHorasOS = new JPanel(new FlowLayout(FlowLayout.LEFT, 4, 0));
+        painelHorasOS.setOpaque(false);
+
+        String[] opcoesHoras = new String[48];
+        int idxH = 0;
+        for (int h = 0; h < 24; h++) {
+            opcoesHoras[idxH++] = String.format("%02d:00", h);
+            opcoesHoras[idxH++] = String.format("%02d:30", h);
+        }
+        cbHorarioInicio = new JComboBox<>(opcoesHoras);
+        cbHorarioInicio.setSelectedItem("18:00");
+        cbHorarioFim = new JComboBox<>(opcoesHoras);
+        cbHorarioFim.setSelectedItem("22:00");
+
+        painelHorasOS.add(new JLabel("Das"));
+        painelHorasOS.add(cbHorarioInicio);
+        painelHorasOS.add(new JLabel("às"));
+        painelHorasOS.add(cbHorarioFim);
+        painel.add(painelHorasOS, gbc);
+
+        gbc.gridx = 2; gbc.gridy = 6; gbc.weightx = 0.15;
+        painel.add(new JLabel("Tipo de Evento:"), gbc);
+
+        gbc.gridx = 3; gbc.gridy = 6; gbc.weightx = 0.35;
+        cbTipoEvento = new JComboBox<>(new String[]{"Casamento", "Aniversário", "15 Anos", "Corporativo", "Festa Infantil", "Formatura", "Outro"});
+        painel.add(cbTipoEvento, gbc);
+
+        // Linha 7: Convidados e Preço/Pessoa
+        gbc.gridx = 0; gbc.gridy = 7; gbc.weightx = 0.12;
+        painel.add(new JLabel("Qtd. Convidados: *"), gbc);
+
+        gbc.gridx = 1; gbc.gridy = 7; gbc.weightx = 0.38;
         txtConvidados = new JTextField("100");
         txtConvidados.putClientProperty("JTextField.placeholderText", "Ex: 100");
         painel.add(txtConvidados, gbc);
 
-        gbc.gridx = 2; gbc.gridy = 6; gbc.weightx = 0.15;
+        gbc.gridx = 2; gbc.gridy = 7; gbc.weightx = 0.15;
         painel.add(new JLabel("Valor / Pessoa (R$): *"), gbc);
 
-        gbc.gridx = 3; gbc.gridy = 6; gbc.weightx = 0.35;
+        gbc.gridx = 3; gbc.gridy = 7; gbc.weightx = 0.35;
         txtPrecoPorPessoa = new JTextField("125.00");
         txtPrecoPorPessoa.putClientProperty("JTextField.placeholderText", "0.00");
         painel.add(txtPrecoPorPessoa, gbc);
 
-        // Linha 7: Taxa de Serviço (%) e Taxa de Transporte (R$)
-        gbc.gridx = 0; gbc.gridy = 7; gbc.weightx = 0.12;
+        // Linha 8: Taxa de Serviço (%) e Taxa de Transporte (R$)
+        gbc.gridx = 0; gbc.gridy = 8; gbc.weightx = 0.12;
         painel.add(new JLabel("Taxa de Serviço (%):"), gbc);
 
-        gbc.gridx = 1; gbc.gridy = 7; gbc.weightx = 0.38;
+        gbc.gridx = 1; gbc.gridy = 8; gbc.weightx = 0.38;
         JPanel painelTaxaServico = new JPanel(new BorderLayout(8, 0));
         painelTaxaServico.setOpaque(false);
 
@@ -419,16 +494,16 @@ public class BuffetErpApp extends JFrame {
         painelTaxaServico.add(lblValorTaxaServicoCalculado, BorderLayout.EAST);
         painel.add(painelTaxaServico, gbc);
 
-        gbc.gridx = 2; gbc.gridy = 7; gbc.weightx = 0.15;
+        gbc.gridx = 2; gbc.gridy = 8; gbc.weightx = 0.15;
         painel.add(new JLabel("Taxa Transporte (R$):"), gbc);
 
-        gbc.gridx = 3; gbc.gridy = 7; gbc.weightx = 0.35;
+        gbc.gridx = 3; gbc.gridy = 8; gbc.weightx = 0.35;
         txtTaxaTransporte = new JTextField("0.00");
         txtTaxaTransporte.putClientProperty("JTextField.placeholderText", "0.00");
         painel.add(txtTaxaTransporte, gbc);
 
-        // Linha 8: Card Financeiro de Destaque para o Valor Total
-        gbc.gridx = 0; gbc.gridy = 8; gbc.gridwidth = 4; gbc.weightx = 1.0;
+        // Linha 9: Card Financeiro de Destaque para o Valor Total
+        gbc.gridx = 0; gbc.gridy = 9; gbc.gridwidth = 4; gbc.weightx = 1.0;
         gbc.insets = new Insets(8, 6, 2, 6);
 
         JPanel cardTotal = new JPanel(new BorderLayout(10, 2));
@@ -538,6 +613,12 @@ public class BuffetErpApp extends JFrame {
         btnLimpar.setFont(new Font("Segoe UI", Font.PLAIN, 12));
         btnLimpar.addActionListener(e -> limparCamposNovaOS());
 
+        JButton btnCronogramaFinanceiro = new JButton("Cronograma Financeiro", com.festalia.util.IconesFestalia.moeda(13, COR_AZUL_FESTALIA));
+        btnCronogramaFinanceiro.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnCronogramaFinanceiro.putClientProperty("JButton.buttonType", "default");
+        btnCronogramaFinanceiro.setToolTipText("Gerenciar parcelamento, pagamentos e recibos desta OS");
+        btnCronogramaFinanceiro.addActionListener(e -> abrirCronogramaFinanceiroNovaOS());
+
         JButton btnSalvarHistorico = new JButton("Salvar no Histórico");
         btnSalvarHistorico.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnSalvarHistorico.putClientProperty("JButton.buttonType", "default");
@@ -550,6 +631,7 @@ public class BuffetErpApp extends JFrame {
         btnGerarPdf.addActionListener(e -> salvarOrdemServico(true));
 
         painel.add(btnLimpar);
+        painel.add(btnCronogramaFinanceiro);
         painel.add(btnSalvarHistorico);
         painel.add(btnGerarPdf);
         return painel;
@@ -617,12 +699,48 @@ public class BuffetErpApp extends JFrame {
         }
     }
 
+    private void abrirCronogramaFinanceiroNovaOS() {
+        if (idOrdemServicoEmEdicao > 0) {
+            OrdemServico os = ordemServicoDAO.listarTodas().stream()
+                    .filter(o -> o.getId() == idOrdemServicoEmEdicao)
+                    .findFirst().orElse(null);
+            if (os != null) {
+                GestaoFinanceiraDialog dialog = new GestaoFinanceiraDialog(this, os, financeiroDAO);
+                dialog.setVisible(true);
+                carregarTabelaHistorico();
+                return;
+            }
+        }
+
+        // Se a OS ainda não foi salva:
+        int resp = JOptionPane.showConfirmDialog(this,
+                "Para gerenciar o cronograma financeiro (parcelas, vencimentos e recibos),\n" +
+                "a Ordem de Serviço precisa ser salva no sistema primeiro.\n\n" +
+                "Deseja salvar esta Ordem de Serviço agora para prosseguir?",
+                "Salvar OS para Gestão Financeira",
+                JOptionPane.YES_NO_OPTION,
+                JOptionPane.QUESTION_MESSAGE);
+
+        if (resp == JOptionPane.YES_OPTION) {
+            OrdemServico osSalva = executarSalvamentoOS(false, true);
+            if (osSalva != null) {
+                GestaoFinanceiraDialog dialog = new GestaoFinanceiraDialog(this, osSalva, financeiroDAO);
+                dialog.setVisible(true);
+                carregarTabelaHistorico();
+            }
+        }
+    }
+
     private void salvarOrdemServico(boolean gerarPdf) {
+        executarSalvamentoOS(gerarPdf, false);
+    }
+
+    private OrdemServico executarSalvamentoOS(boolean gerarPdf, boolean manterFormulario) {
         String cliente = txtCliente.getText().trim();
         if (cliente.isEmpty()) {
             JOptionPane.showMessageDialog(this, "Informe o nome do cliente / contratante.", "Aviso", JOptionPane.WARNING_MESSAGE);
             txtCliente.requestFocus();
-            return;
+            return null;
         }
 
         LocalDate dataEvento;
@@ -631,8 +749,32 @@ public class BuffetErpApp extends JFrame {
         } catch (DateTimeParseException e) {
             JOptionPane.showMessageDialog(this, "Data do evento inválida! Use o formato dd/MM/yyyy.", "Erro", JOptionPane.ERROR_MESSAGE);
             txtDataEvento.requestFocus();
-            return;
+            return null;
         }
+
+        LocalTime horarioInicio = LocalTime.of(18, 0);
+        LocalTime horarioFim = LocalTime.of(22, 0);
+        if (cbHorarioInicio != null && cbHorarioInicio.getSelectedItem() != null) {
+            try {
+                horarioInicio = LocalTime.parse((String) cbHorarioInicio.getSelectedItem());
+            } catch (Exception ignored) {}
+        }
+        if (cbHorarioFim != null && cbHorarioFim.getSelectedItem() != null) {
+            try {
+                horarioFim = LocalTime.parse((String) cbHorarioFim.getSelectedItem());
+            } catch (Exception ignored) {}
+        }
+
+        if (!horarioFim.isAfter(horarioInicio)) {
+            JOptionPane.showMessageDialog(this,
+                    "O horário de término (" + horarioFim + ") deve ser posterior ao horário de início (" + horarioInicio + ").",
+                    "Horário Inválido", JOptionPane.WARNING_MESSAGE);
+            if (cbHorarioFim != null) cbHorarioFim.requestFocus();
+            return null;
+        }
+
+        String tipoEvento = (cbTipoEvento != null && cbTipoEvento.getSelectedItem() != null)
+                ? (String) cbTipoEvento.getSelectedItem() : "Casamento";
 
         int convidados;
         double precoPorPessoa;
@@ -642,7 +784,7 @@ public class BuffetErpApp extends JFrame {
             if (convidados <= 0 || precoPorPessoa < 0) throw new NumberFormatException();
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Informe números válidos para convidados e preço por pessoa.", "Erro", JOptionPane.ERROR_MESSAGE);
-            return;
+            return null;
         }
 
         double taxaServico = 0.0;
@@ -659,7 +801,7 @@ public class BuffetErpApp extends JFrame {
             }
         } catch (NumberFormatException e) {
             JOptionPane.showMessageDialog(this, "Informe valores válidos para as taxas de serviço (%) e transporte (R$).", "Erro", JOptionPane.ERROR_MESSAGE);
-            return;
+            return null;
         }
 
         Cardapio cardapio = obterCardapioEditado();
@@ -689,12 +831,35 @@ public class BuffetErpApp extends JFrame {
         double valorTaxaServico = subtotalBuffet * (taxaServico / 100.0);
         double valorTotal = subtotalBuffet + valorTaxaServico + taxaTransporte;
 
-        OrdemServico os = new OrdemServico(0, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento, local,
-                convidados, precoPorPessoa, taxaServico, taxaTransporte, valorTotal, status, cardapio, observacoes, null);
+        int idAtual = idOrdemServicoEmEdicao;
+        OrdemServico os = new OrdemServico(idAtual, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento, local,
+                convidados, precoPorPessoa, taxaServico, taxaTransporte, valorTotal, status, cardapio, observacoes, null,
+                horarioInicio, horarioFim, tipoEvento, false);
+
+        // Prevenção e validação de conflitos de reservas
+        List<OrdemServico> todasExistentes = ordemServicoDAO.listarTodas();
+        List<OrdemServico> conflitos = ReservaConflitoValidator.verificarConflitos(os, todasExistentes);
+
+        if (!conflitos.isEmpty()) {
+            ReservaConflitoValidator.RespostaConflito resp = ReservaConflitoValidator.exibirModalConflito(this, os, conflitos);
+            if (resp == ReservaConflitoValidator.RespostaConflito.CANCELAR) {
+                return null;
+            } else if (resp == ReservaConflitoValidator.RespostaConflito.VOLTAR_ALTERAR_HORARIO) {
+                if (cbHorarioInicio != null) {
+                    cbHorarioInicio.requestFocus();
+                }
+                return null;
+            } else if (resp == ReservaConflitoValidator.RespostaConflito.CADASTRAR_MESMO_ASSIM) {
+                os.setConflitoConfirmado(true);
+            }
+        }
 
         try {
             ordemServicoDAO.salvar(os);
             carregarTabelaHistorico();
+            if (painelCalendario != null) {
+                painelCalendario.recarregarDados();
+            }
 
             if (gerarPdf) {
                 JFileChooser fileChooser = new JFileChooser();
@@ -724,15 +889,26 @@ public class BuffetErpApp extends JFrame {
                     }
                 }
             } else {
-                JOptionPane.showMessageDialog(this, "Ordem de Serviço Nº " + os.getNumeroOS() + " salva com sucesso no histórico!", "Sucesso", JOptionPane.INFORMATION_MESSAGE);
+                String msg = (idAtual > 0)
+                        ? "Ordem de Serviço Nº " + os.getNumeroOS() + " atualizada com sucesso no histórico!"
+                        : "Ordem de Serviço Nº " + os.getNumeroOS() + " salva com sucesso no histórico!";
+                JOptionPane.showMessageDialog(this, msg, "Sucesso", JOptionPane.INFORMATION_MESSAGE);
             }
 
-            limparCamposNovaOS();
+            if (manterFormulario) {
+                idOrdemServicoEmEdicao = os.getId();
+            } else {
+                limparCamposNovaOS();
+            }
+
+            return os;
 
         } catch (SQLException e) {
             JOptionPane.showMessageDialog(this, "Erro ao salvar no banco SQLite: " + e.getMessage(), "Erro de Banco", JOptionPane.ERROR_MESSAGE);
+            return null;
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erro ao gerar PDF: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
+            return null;
         }
     }
 
@@ -746,11 +922,73 @@ public class BuffetErpApp extends JFrame {
         return cardapio;
     }
 
+    public void carregarOSParaEdicao(OrdemServico os) {
+        if (os == null) return;
+        this.idOrdemServicoEmEdicao = os.getId();
+
+        txtNumeroOS.setText(String.valueOf(os.getNumeroOS()));
+        txtCliente.setText(os.getCliente());
+        txtTelefone.setText(os.getTelefone() != null ? os.getTelefone() : "");
+        txtDataEvento.setText(os.getDataEvento().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        txtLocal.setText(os.getLocal() != null ? os.getLocal() : "");
+        txtConvidados.setText(String.valueOf(os.getQuantidadeConvidados()));
+        txtPrecoPorPessoa.setText(String.format(Locale.US, "%.2f", os.getPrecoPorPessoa()));
+        txtTaxaServico.setText(String.format(Locale.US, "%.2f", os.getTaxaServico()));
+        txtTaxaTransporte.setText(String.format(Locale.US, "%.2f", os.getTaxaTransporte()));
+        txtObservacoes.setText(os.getObservacoes() != null ? os.getObservacoes() : "");
+
+        if (os.getStatus() != null) {
+            cbStatusOS.setSelectedItem(os.getStatus());
+        }
+        if (os.getTipoEvento() != null && cbTipoEvento != null) {
+            cbTipoEvento.setSelectedItem(os.getTipoEvento());
+        }
+        if (os.getHorarioInicio() != null && cbHorarioInicio != null) {
+            cbHorarioInicio.setSelectedItem(os.getHorarioInicioFormatado());
+        }
+        if (os.getHorarioFim() != null && cbHorarioFim != null) {
+            cbHorarioFim.setSelectedItem(os.getHorarioFimFormatado());
+        }
+
+        // Cardápio
+        if (os.getCardapioSelecionado() != null) {
+            Cardapio card = os.getCardapioSelecionado();
+            for (int i = 0; i < cbCardapios.getItemCount(); i++) {
+                Cardapio item = cbCardapios.getItemAt(i);
+                if (item.getNome().equalsIgnoreCase(card.getNome())) {
+                    cbCardapios.setSelectedIndex(i);
+                    break;
+                }
+            }
+            if (card.getItens() != null && !card.getItens().isEmpty()) {
+                StringBuilder sb = new StringBuilder();
+                if (card.getDescricao() != null && !card.getDescricao().isBlank()) {
+                    sb.append(card.getDescricao().trim()).append("\n\n");
+                }
+                sb.append("ITENS INCLUSOS NO MENU:\n");
+                for (String it : card.getItens()) {
+                    sb.append("• ").append(it).append("\n");
+                }
+                txtDescricaoCardapio.setText(sb.toString().trim());
+            }
+        }
+
+        atualizarCalculoValorTotal();
+
+        if (abas != null) {
+            abas.setSelectedIndex(0);
+        }
+    }
+
     private void limparCamposNovaOS() {
+        this.idOrdemServicoEmEdicao = 0;
         txtNumeroOS.setText(String.valueOf(DatabaseManager.gerarProximoNumeroOS()));
         txtCliente.setText("");
         txtTelefone.setText("");
         txtDataEvento.setText(LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
+        if (cbHorarioInicio != null) cbHorarioInicio.setSelectedItem("18:00");
+        if (cbHorarioFim != null) cbHorarioFim.setSelectedItem("22:00");
+        if (cbTipoEvento != null) cbTipoEvento.setSelectedItem("Casamento");
         txtConvidados.setText("100");
         txtLocal.setText("Espaço Festalia Garden - Salão Nobre");
         txtTaxaServico.setText("0.00");
@@ -799,6 +1037,17 @@ public class BuffetErpApp extends JFrame {
         JPanel painelAcoes = new JPanel(new FlowLayout(FlowLayout.RIGHT, 6, 0));
         painelAcoes.setOpaque(false);
 
+        JButton btnFinanceiro = new JButton("Gestão Financeira", com.festalia.util.IconesFestalia.moeda(13, COR_AZUL_FESTALIA));
+        btnFinanceiro.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnFinanceiro.putClientProperty("JButton.buttonType", "default");
+        btnFinanceiro.setToolTipText("Gerenciar cronograma financeiro, parcelas, vencimentos e recibos");
+        btnFinanceiro.addActionListener(e -> abrirGestaoFinanceiraHistorico());
+
+        JButton btnEditarOs = new JButton("Editar OS");
+        btnEditarOs.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnEditarOs.putClientProperty("JButton.buttonType", "default");
+        btnEditarOs.addActionListener(e -> editarOsSelecionadaHistorico());
+
         JButton btnReemitirPdf = new JButton("Reemitir PDF da OS");
         btnReemitirPdf.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnReemitirPdf.putClientProperty("JButton.buttonType", "default");
@@ -812,6 +1061,8 @@ public class BuffetErpApp extends JFrame {
         btnExcluir.setForeground(new Color(192, 57, 43));
         btnExcluir.addActionListener(e -> excluirOsSelecionada());
 
+        painelAcoes.add(btnFinanceiro);
+        painelAcoes.add(btnEditarOs);
         painelAcoes.add(btnReemitirPdf);
         painelAcoes.add(btnMudarStatus);
         painelAcoes.add(btnExcluir);
@@ -820,7 +1071,7 @@ public class BuffetErpApp extends JFrame {
         painel.add(topo, BorderLayout.NORTH);
 
         // Tabela de Histórico
-        String[] colunas = {"ID", "OS Nº", "Data Evento", "Cliente", "Telefone", "Local", "Convidados", "Cardápio", "Valor Total", "Status"};
+        String[] colunas = {"ID", "OS Nº", "Data Evento", "Cliente", "Telefone", "Local", "Convidados", "Cardápio", "Valor Total", "Status", "Financeiro"};
         modelHistorico = new DefaultTableModel(colunas, 0) {
             @Override public boolean isCellEditable(int row, int column) { return false; }
         };
@@ -831,21 +1082,32 @@ public class BuffetErpApp extends JFrame {
         tabelaHistorico.setSelectionMode(ListSelectionModel.SINGLE_SELECTION);
         tabelaHistorico.putClientProperty("JTable.alternateRowColor", true);
 
+        // Duplo clique na tabela para carregar e editar OS
+        tabelaHistorico.addMouseListener(new java.awt.event.MouseAdapter() {
+            @Override
+            public void mouseClicked(java.awt.event.MouseEvent e) {
+                if (e.getClickCount() == 2 && tabelaHistorico.getSelectedRow() >= 0) {
+                    editarOsSelecionadaHistorico();
+                }
+            }
+        });
+
         // Esconde coluna interna ID
         tabelaHistorico.getColumnModel().getColumn(0).setMinWidth(0);
         tabelaHistorico.getColumnModel().getColumn(0).setMaxWidth(0);
         tabelaHistorico.getColumnModel().getColumn(0).setWidth(0);
 
         // Larguras calibradas para evitar truncamento com reticências
-        tabelaHistorico.getColumnModel().getColumn(1).setPreferredWidth(75);   // OS Nº
-        tabelaHistorico.getColumnModel().getColumn(2).setPreferredWidth(95);   // Data Evento
-        tabelaHistorico.getColumnModel().getColumn(3).setPreferredWidth(170);  // Cliente
-        tabelaHistorico.getColumnModel().getColumn(4).setPreferredWidth(115);  // Telefone
-        tabelaHistorico.getColumnModel().getColumn(5).setPreferredWidth(200);  // Local
-        tabelaHistorico.getColumnModel().getColumn(6).setPreferredWidth(85);   // Convidados
-        tabelaHistorico.getColumnModel().getColumn(7).setPreferredWidth(165);  // Cardápio
-        tabelaHistorico.getColumnModel().getColumn(8).setPreferredWidth(115);  // Valor Total
-        tabelaHistorico.getColumnModel().getColumn(9).setPreferredWidth(100);  // Status
+        tabelaHistorico.getColumnModel().getColumn(1).setPreferredWidth(70);   // OS Nº
+        tabelaHistorico.getColumnModel().getColumn(2).setPreferredWidth(90);   // Data Evento
+        tabelaHistorico.getColumnModel().getColumn(3).setPreferredWidth(160);  // Cliente
+        tabelaHistorico.getColumnModel().getColumn(4).setPreferredWidth(110);  // Telefone
+        tabelaHistorico.getColumnModel().getColumn(5).setPreferredWidth(180);  // Local
+        tabelaHistorico.getColumnModel().getColumn(6).setPreferredWidth(80);   // Convidados
+        tabelaHistorico.getColumnModel().getColumn(7).setPreferredWidth(150);  // Cardápio
+        tabelaHistorico.getColumnModel().getColumn(8).setPreferredWidth(110);  // Valor Total
+        tabelaHistorico.getColumnModel().getColumn(9).setPreferredWidth(95);   // Status
+        tabelaHistorico.getColumnModel().getColumn(10).setPreferredWidth(120); // Financeiro
 
         DefaultTableCellRenderer centro = new DefaultTableCellRenderer();
         centro.setHorizontalAlignment(JLabel.CENTER);
@@ -890,21 +1152,52 @@ public class BuffetErpApp extends JFrame {
         };
         tabelaHistorico.getColumnModel().getColumn(9).setCellRenderer(statusRenderer);
 
+        // Renderizador elegante de status financeiro
+        DefaultTableCellRenderer financeiroRenderer = new DefaultTableCellRenderer() {
+            @Override
+            public Component getTableCellRendererComponent(JTable table, Object value, boolean isSelected, boolean hasFocus, int row, int column) {
+                JLabel lbl = (JLabel) super.getTableCellRendererComponent(table, value, isSelected, hasFocus, row, column);
+                lbl.setHorizontalAlignment(JLabel.CENTER);
+                lbl.setFont(new Font("Segoe UI", Font.BOLD, 11));
+                if (!isSelected && value != null) {
+                    String st = value.toString();
+                    if ("QUITADA".equalsIgnoreCase(st)) {
+                        lbl.setForeground(new Color(22, 101, 52));     // Verde escuro
+                    } else if (st.startsWith("EM ATRASO")) {
+                        lbl.setForeground(new Color(220, 38, 38));     // Vermelho
+                    } else if (st.contains("%")) {
+                        lbl.setForeground(new Color(37, 99, 235));     // Azul
+                    } else if ("A Vencer".equalsIgnoreCase(st)) {
+                        lbl.setForeground(new Color(217, 119, 6));     // Laranja
+                    } else {
+                        lbl.setForeground(new Color(100, 116, 139));   // Cinza ardósia
+                    }
+                }
+                return lbl;
+            }
+        };
+        tabelaHistorico.getColumnModel().getColumn(10).setCellRenderer(financeiroRenderer);
+
         painel.add(new JScrollPane(tabelaHistorico), BorderLayout.CENTER);
 
-        // Rodapé: Estatísticas de Faturamento
-        JPanel rodape = new JPanel(new BorderLayout());
+        // Rodapé: Estatísticas de Faturamento e Inadimplência Geral
+        JPanel rodape = new JPanel(new BorderLayout(12, 0));
         rodape.setBackground(Color.WHITE);
         rodape.setBorder(new CompoundBorder(new LineBorder(new Color(218, 224, 233)), new EmptyBorder(10, 14, 10, 14)));
 
         lblTotalEventos = new JLabel("Eventos listados: 0");
         lblTotalEventos.setFont(new Font("Segoe UI", Font.PLAIN, 13));
 
+        lblResumoInadimplenciaGeral = new JLabel("");
+        lblResumoInadimplenciaGeral.setFont(new Font("Segoe UI", Font.PLAIN, 12));
+        lblResumoInadimplenciaGeral.setHorizontalAlignment(SwingConstants.CENTER);
+
         lblTotalFaturamento = new JLabel("Faturamento Ativo: R$ 0,00");
         lblTotalFaturamento.setFont(new Font("Segoe UI", Font.BOLD, 15));
         lblTotalFaturamento.setForeground(new Color(21, 128, 61));
 
         rodape.add(lblTotalEventos, BorderLayout.WEST);
+        rodape.add(lblResumoInadimplenciaGeral, BorderLayout.CENTER);
         rodape.add(lblTotalFaturamento, BorderLayout.EAST);
         painel.add(rodape, BorderLayout.SOUTH);
 
@@ -923,6 +1216,20 @@ public class BuffetErpApp extends JFrame {
         double faturamento = 0.0;
 
         for (OrdemServico os : lista) {
+            ResumoFinanceiroOS resumo = financeiroDAO.obterResumoOS(os.getId(), os.getValorTotal());
+            String statusFin;
+            if (resumo.isTotalmenteQuitada()) {
+                statusFin = "QUITADA";
+            } else if (resumo.getParcelasVencidas() > 0) {
+                statusFin = "EM ATRASO (" + resumo.getParcelasVencidas() + ")";
+            } else if (resumo.getTotalPago() > 0) {
+                statusFin = String.format(Locale.US, "%.0f%% Pago", resumo.getPercentualPago());
+            } else if (resumo.getQuantidadeParcelas() > 0) {
+                statusFin = "A Vencer";
+            } else {
+                statusFin = "Sem Parcelas";
+            }
+
             modelHistorico.addRow(new Object[]{
                     os.getId(),
                     os.getNumeroOS(),
@@ -933,7 +1240,8 @@ public class BuffetErpApp extends JFrame {
                     os.getQuantidadeConvidados(),
                     os.getCardapioSelecionado() != null ? os.getCardapioSelecionado().getNome() : "—",
                     os.getValorTotalFormatado(),
-                    os.getStatus()
+                    os.getStatus(),
+                    statusFin
             });
             if (!"Cancelado".equalsIgnoreCase(os.getStatus())) {
                 faturamento += os.getValorTotal();
@@ -944,6 +1252,35 @@ public class BuffetErpApp extends JFrame {
             lblTotalEventos.setText("Eventos listados: " + lista.size());
             lblTotalFaturamento.setText("Faturamento Ativo: " + MOEDA_BRL.format(faturamento));
         }
+
+        if (lblResumoInadimplenciaGeral != null) {
+            FinanceiroDAO.TotaisGeraisInadimplencia totais = financeiroDAO.obterTotaisGeraisInadimplencia();
+            lblResumoInadimplenciaGeral.setText(String.format(
+                    "<html><b>Financeiro:</b> <span style='color:#dc2626'><b>%d</b> vencida(s)</span> &bull; <span style='color:#d97706'><b>%d</b> a vencer</span> &bull; <span style='color:#16a34a'><b>%d</b> paga(s)</span></html>",
+                    totais.parcelasVencidas, totais.parcelasAVencer, totais.parcelasPagas
+            ));
+        }
+    }
+
+    private void abrirGestaoFinanceiraHistorico() {
+        int row = tabelaHistorico.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Selecione uma Ordem de Serviço na tabela para gerenciar o financeiro.", "Aviso", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int osId = (int) modelHistorico.getValueAt(row, 0);
+        List<OrdemServico> todas = ordemServicoDAO.listarTodas();
+        OrdemServico os = todas.stream().filter(o -> o.getId() == osId).findFirst().orElse(null);
+
+        if (os == null) {
+            JOptionPane.showMessageDialog(this, "Não foi possível carregar os dados desta OS.", "Erro", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        GestaoFinanceiraDialog dialog = new GestaoFinanceiraDialog(this, os, financeiroDAO);
+        dialog.setVisible(true);
+        carregarTabelaHistorico();
     }
 
     private void reemitirPdfSelecionado() {
@@ -980,6 +1317,25 @@ public class BuffetErpApp extends JFrame {
         }
     }
 
+    private void editarOsSelecionadaHistorico() {
+        int row = tabelaHistorico.getSelectedRow();
+        if (row < 0) {
+            JOptionPane.showMessageDialog(this, "Selecione uma Ordem de Serviço na tabela para editar.", "Aviso", JOptionPane.INFORMATION_MESSAGE);
+            return;
+        }
+
+        int osId = (int) modelHistorico.getValueAt(row, 0);
+        List<OrdemServico> todas = ordemServicoDAO.listarTodas();
+        OrdemServico os = todas.stream().filter(o -> o.getId() == osId).findFirst().orElse(null);
+
+        if (os == null) {
+            JOptionPane.showMessageDialog(this, "Não foi possível carregar os dados desta OS.", "Erro", JOptionPane.ERROR_MESSAGE);
+            return;
+        }
+
+        carregarOSParaEdicao(os);
+    }
+
     private void alterarStatusSelecionado() {
         int row = tabelaHistorico.getSelectedRow();
         if (row < 0) {
@@ -1003,6 +1359,9 @@ public class BuffetErpApp extends JFrame {
             try {
                 ordemServicoDAO.atualizarStatus(id, novoStatus);
                 carregarTabelaHistorico();
+                if (painelCalendario != null) {
+                    painelCalendario.recarregarDados();
+                }
             } catch (SQLException e) {
                 JOptionPane.showMessageDialog(this, "Erro ao atualizar status: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             }
@@ -1029,6 +1388,9 @@ public class BuffetErpApp extends JFrame {
             try {
                 ordemServicoDAO.excluir(id);
                 carregarTabelaHistorico();
+                if (painelCalendario != null) {
+                    painelCalendario.recarregarDados();
+                }
             } catch (SQLException e) {
                 JOptionPane.showMessageDialog(this, "Erro ao excluir OS: " + e.getMessage(), "Erro", JOptionPane.ERROR_MESSAGE);
             }
@@ -1308,53 +1670,39 @@ public class BuffetErpApp extends JFrame {
                 resDir.mkdirs();
             }
 
-            // Origem da logo Mendez Buffet enviada pelo usuário no artifact storage
-            String origemMendez = "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790705846854.jpg";
-            File fOrigem = new File(origemMendez);
-            if (fOrigem.exists() && fOrigem.isFile() && fOrigem.length() > 0) {
-                File dest1 = new File("mendez_logo.png");
-                if (!dest1.exists() || dest1.length() == 0) {
-                    Files.copy(fOrigem.toPath(), dest1.toPath(), StandardCopyOption.REPLACE_EXISTING);
+            // Sincroniza a Logo Oficial do Festalia ERP como padrão
+            String origemFestalia = "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790699283882.jpg";
+            File fFestalia = new File(origemFestalia);
+            if (fFestalia.exists() && fFestalia.isFile() && fFestalia.length() > 0) {
+                File dest1 = new File("festalia_logo.jpg");
+                Files.copy(fFestalia.toPath(), dest1.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                File dest2 = new File("src/main/resources/festalia_logo.jpg");
+                Files.copy(fFestalia.toPath(), dest2.toPath(), StandardCopyOption.REPLACE_EXISTING);
+                File dest3 = new File("target/classes/festalia_logo.jpg");
+                if (dest3.getParentFile().exists()) {
+                    Files.copy(fFestalia.toPath(), dest3.toPath(), StandardCopyOption.REPLACE_EXISTING);
                 }
-                File dest2 = new File("src/main/resources/mendez_logo.png");
-                if (!dest2.exists() || dest2.length() == 0) {
-                    Files.copy(fOrigem.toPath(), dest2.toPath(), StandardCopyOption.REPLACE_EXISTING);
-                }
+            }
+
+            // Se o banco estava salvo com logo Mendez, reseta para usar o padrão Festalia ERP
+            String logoSalva = DatabaseManager.obterConfiguracao("buffet.logo_path", "");
+            if (logoSalva != null && logoSalva.toLowerCase().contains("mendez")) {
+                DatabaseManager.salvarConfiguracao("buffet.logo_path", "");
             }
         } catch (Exception e) {
             System.err.println("Aviso ao sincronizar assets: " + e.getMessage());
         }
     }
 
-    public static Image carregarImagemLogoRaw() {
-        return carregarImagemLogoRaw(null);
-    }
-
-    public static Image carregarImagemLogoRaw(String caminhoCustomizado) {
-        // 1. Tenta carregar caminho explicitamente informado
-        if (caminhoCustomizado != null && !caminhoCustomizado.trim().isEmpty()) {
-            try {
-                File f = new File(caminhoCustomizado.trim());
-                if (f.exists() && f.isFile() && f.length() > 0) {
-                    return new ImageIcon(f.getAbsolutePath()).getImage();
-                }
-            } catch (Exception ignored) {}
-        }
-
-        // 2. Tenta carregar o caminho salvo nas configurações do buffet
-        try {
-            String configLogo = DatabaseManager.obterConfiguracao("buffet.logo_path", null);
-            if (configLogo != null && !configLogo.trim().isEmpty()) {
-                File fConfig = new File(configLogo.trim());
-                if (fConfig.exists() && fConfig.isFile() && fConfig.length() > 0) {
-                    return new ImageIcon(fConfig.getAbsolutePath()).getImage();
-                }
-            }
-        } catch (Exception ignored) {}
-
-        // 3. Tenta carregar do classpath (mendez_logo.png ou festalia_logo.jpg)
-        String[] recursos = {"/mendez_logo.png", "/festalia_logo.jpg", "mendez_logo.png", "festalia_logo.jpg"};
-        for (String rec : recursos) {
+    /**
+     * Carrega SEMPRE e EXCLUSIVAMENTE o logotipo oficial da MARCA DO PROGRAMA (Festalia ERP).
+     * Esta imagem permanece FIXA no cabeçalho do software e no ícone da janela,
+     * NUNCA sendo alterada pelas logomarcas que o usuário seleciona para o buffet ou PDFs.
+     */
+    public static Image carregarImagemOficialFestalia() {
+        // 1. Tenta carregar do classpath (recurso interno fixo da aplicação)
+        String[] recursosFixos = {"/festalia_logo.jpg", "festalia_logo.jpg"};
+        for (String rec : recursosFixos) {
             try {
                 java.net.URL url = BuffetErpApp.class.getResource(rec.startsWith("/") ? rec : "/" + rec);
                 if (url == null) {
@@ -1366,21 +1714,16 @@ public class BuffetErpApp extends JFrame {
             } catch (Exception ignored) {}
         }
 
-        // 4. Múltiplos caminhos de arquivos locais de desenvolvimento
-        String[] caminhos = {
-            "mendez_logo.png",
-            "src/main/resources/mendez_logo.png",
-            "target/classes/mendez_logo.png",
-            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790705846854.jpg",
+        // 2. Tenta os caminhos locais conhecidos da logo oficial Festalia ERP
+        String[] caminhosFixos = {
             "festalia_logo.jpg",
             "src/main/resources/festalia_logo.jpg",
             "target/classes/festalia_logo.jpg",
-            "C:/Users/matheus.souza/Documents/Programa do BUFFET GUI/mendez_logo.png",
-            "C:/Users/matheus.souza/Documents/Programa do BUFFET GUI/festalia_logo.jpg",
-            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790699283882.jpg"
+            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790699283882.jpg",
+            "C:/Users/matheus.souza/Documents/Programa do BUFFET GUI/festalia_logo.jpg"
         };
 
-        for (String caminho : caminhos) {
+        for (String caminho : caminhosFixos) {
             try {
                 File f = new File(caminho);
                 if (f.exists() && f.isFile() && f.length() > 0) {
@@ -1390,6 +1733,55 @@ public class BuffetErpApp extends JFrame {
         }
 
         return null;
+    }
+
+    public static ImageIcon carregarIconeOficialFestalia(int width, int height) {
+        Image raw = carregarImagemOficialFestalia();
+        if (raw == null) {
+            return null;
+        }
+        java.awt.image.BufferedImage resized = new java.awt.image.BufferedImage(width, height, java.awt.image.BufferedImage.TYPE_INT_ARGB);
+        Graphics2D g2 = resized.createGraphics();
+        g2.setRenderingHint(RenderingHints.KEY_INTERPOLATION, RenderingHints.VALUE_INTERPOLATION_BILINEAR);
+        g2.setRenderingHint(RenderingHints.KEY_RENDERING, RenderingHints.VALUE_RENDER_QUALITY);
+        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
+        g2.drawImage(raw, 0, 0, width, height, null);
+        g2.dispose();
+        return new ImageIcon(resized);
+    }
+
+    public static Image carregarImagemLogoRaw() {
+        return carregarImagemLogoRaw(null);
+    }
+
+    /**
+     * Carrega a logomarca do BUFFET (para a Marca D'Água do PDF e preview na aba de OS).
+     * Esta sim é customizável pelo usuário e salva nas configurações da Ordem de Serviço.
+     */
+    public static Image carregarImagemLogoRaw(String caminhoCustomizado) {
+        // 1. Tenta carregar caminho explicitamente informado (selecionado pelo usuário na tela)
+        if (caminhoCustomizado != null && !caminhoCustomizado.trim().isEmpty()) {
+            try {
+                File f = new File(caminhoCustomizado.trim());
+                if (f.exists() && f.isFile() && f.length() > 0) {
+                    return new ImageIcon(f.getAbsolutePath()).getImage();
+                }
+            } catch (Exception ignored) {}
+        }
+
+        // 2. Tenta carregar o caminho salvo nas configurações do buffet (caso tenha sido escolhido para o PDF)
+        try {
+            String configLogo = DatabaseManager.obterConfiguracao("buffet.logo_path", null);
+            if (configLogo != null && !configLogo.trim().isEmpty()) {
+                File fConfig = new File(configLogo.trim());
+                if (fConfig.exists() && fConfig.isFile() && fConfig.length() > 0) {
+                    return new ImageIcon(fConfig.getAbsolutePath()).getImage();
+                }
+            }
+        } catch (Exception ignored) {}
+
+        // 3. Fallback: Se o usuário não definiu uma logo própria para o buffet, usa a logo do Festalia ERP
+        return carregarImagemOficialFestalia();
     }
 
     public static ImageIcon carregarIconeLogo(int width, int height) {

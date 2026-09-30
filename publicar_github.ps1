@@ -13,7 +13,7 @@ Write-Host ""
 
 $ghUsername = "matheusxdbr12"
 $repoNome = "programa-buffet-festalia-erp"
-$desc = "Festalia ERP - Sistema Integrado de Gestao para Buffets e Eventos com Emissao de OS em PDF e Marca D'Agua customizavel"
+$desc = "Festalia ERP - Sistema Integrado de Gestao para Buffets e Eventos com Gestao Financeira Avancada, Parcelamento, Recibos e Termos de Quitacao em PDF"
 
 # 1. Configurar credenciais do Git usando o GitHub CLI
 Write-Host "[1/5] Vinculando credenciais do GitHub CLI ao Git..." -ForegroundColor Yellow
@@ -31,8 +31,8 @@ if (-not $currentName) {
     Write-Host "  -> Nome configurado: Matheus De Souza" -ForegroundColor Gray
 }
 if (-not $currentEmail) {
-    git config --global user.email "15384914+matheusxdbr12@users.noreply.github.com"
-    Write-Host "  -> Email configurado: 15384914+matheusxdbr12@users.noreply.github.com" -ForegroundColor Gray
+    git config --global user.email "matheusxp21@gmail.com"
+    Write-Host "  -> Email configurado: matheusxp21@gmail.com" -ForegroundColor Gray
 }
 Write-Host "  -> Autor: $(git config user.name) <$(git config user.email)>" -ForegroundColor Green
 
@@ -52,10 +52,10 @@ $status = git status --porcelain
 $hasCommits = git rev-parse --verify HEAD 2>$null
 
 if ($status) {
-    Write-Host "  -> Criando commit da versao 2.0..." -ForegroundColor Gray
-    git commit -m "feat: Festalia ERP v2.0 - Gestao de Buffets, Orcamentos, Cardapios e Marca D'Agua customizavel"
+    Write-Host "  -> Criando commit com Gestao Financeira Avancada..." -ForegroundColor Gray
+    git commit -m "feat: Módulo de Gestão Financeira Avançada (Parcelamento, Vencimentos, Pagamentos Parciais, Recibos e Termo de Quitação em PDF)"
 } elseif (-not $hasCommits) {
-    git commit -m "feat: Festalia ERP v2.0 - Gestao de Buffets, Orcamentos, Cardapios e Marca D'Agua customizavel" --allow-empty
+    git commit -m "feat: Módulo de Gestão Financeira Avançada (Parcelamento, Vencimentos, Pagamentos Parciais, Recibos e Termo de Quitação em PDF)" --allow-empty
 } else {
     Write-Host "  -> Nenhuma alteracao pendente. Ultimo commit preservado." -ForegroundColor Gray
 }

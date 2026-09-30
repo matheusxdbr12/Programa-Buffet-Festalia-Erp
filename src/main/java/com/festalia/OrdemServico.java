@@ -3,17 +3,20 @@ package com.festalia;
 import java.text.NumberFormat;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.Objects;
 
 /**
  * Modelo de Ordem de Serviço (OS) para o Festalia ERP.
- * Centraliza as informações de contratação, logística, valores financeiros (incluindo taxas) e itens do menu.
+ * Centraliza as informações de contratação, logística, valores financeiros (incluindo taxas),
+ * itens do menu e parâmetros da agenda visual (horários de início/fim e tipo de evento).
  */
 public class OrdemServico {
 
     public static final DateTimeFormatter FORMATO_DATA = DateTimeFormatter.ofPattern("dd/MM/yyyy");
+    public static final DateTimeFormatter FORMATO_HORA = DateTimeFormatter.ofPattern("HH:mm");
     public static final DateTimeFormatter FORMATO_DATA_HORA = DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm");
     private static final NumberFormat MOEDA_BRL = NumberFormat.getCurrencyInstance(new Locale("pt", "BR"));
 
@@ -22,6 +25,10 @@ public class OrdemServico {
     private String cliente;
     private String telefone;
     private LocalDate dataEvento;
+    private LocalTime horarioInicio = LocalTime.of(18, 0);
+    private LocalTime horarioFim = LocalTime.of(22, 0);
+    private String tipoEvento = "Casamento";
+    private boolean conflitoConfirmado = false;
     private String local;
     private int quantidadeConvidados;
     private double precoPorPessoa;
@@ -102,6 +109,10 @@ public class OrdemServico {
                         String cliente,
                         String telefone,
                         LocalDate dataEvento,
+                        LocalTime horarioInicio,
+                        LocalTime horarioFim,
+                        String tipoEvento,
+                        boolean conflitoConfirmado,
                         String local,
                         int quantidadeConvidados,
                         double precoPorPessoa,
@@ -120,6 +131,10 @@ public class OrdemServico {
         this.cliente = Objects.requireNonNull(cliente, "O nome do cliente é obrigatório.");
         this.telefone = telefone != null ? telefone : "";
         this.dataEvento = dataEvento != null ? dataEvento : LocalDate.now();
+        this.horarioInicio = horarioInicio != null ? horarioInicio : LocalTime.of(18, 0);
+        this.horarioFim = horarioFim != null ? horarioFim : LocalTime.of(22, 0);
+        this.tipoEvento = (tipoEvento != null && !tipoEvento.trim().isEmpty()) ? tipoEvento.trim() : "Casamento";
+        this.conflitoConfirmado = conflitoConfirmado;
         this.local = local != null ? local : "";
         this.quantidadeConvidados = Math.max(0, quantidadeConvidados);
         this.precoPorPessoa = Math.max(0.0, precoPorPessoa);
@@ -135,6 +150,58 @@ public class OrdemServico {
         this.cardapioSelecionado = cardapioSelecionado;
         this.observacoes = observacoes != null ? observacoes : "";
         this.dataCriacao = dataCriacao != null ? dataCriacao : LocalDateTime.now();
+    }
+
+    public OrdemServico(int id,
+                        int numeroOS,
+                        String nomeBuffet,
+                        String subtituloBuffet,
+                        String caminhoLogoBuffet,
+                        String cliente,
+                        String telefone,
+                        LocalDate dataEvento,
+                        String local,
+                        int quantidadeConvidados,
+                        double precoPorPessoa,
+                        double taxaServico,
+                        double taxaTransporte,
+                        double valorTotal,
+                        String status,
+                        Cardapio cardapioSelecionado,
+                        String observacoes,
+                        LocalDateTime dataCriacao) {
+        this(id, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento,
+                LocalTime.of(18, 0), LocalTime.of(22, 0), "Casamento", false,
+                local, quantidadeConvidados, precoPorPessoa, taxaServico, taxaTransporte, valorTotal,
+                status, cardapioSelecionado, observacoes, dataCriacao);
+    }
+
+    public OrdemServico(int id,
+                        int numeroOS,
+                        String nomeBuffet,
+                        String subtituloBuffet,
+                        String caminhoLogoBuffet,
+                        String cliente,
+                        String telefone,
+                        LocalDate dataEvento,
+                        String local,
+                        int quantidadeConvidados,
+                        double precoPorPessoa,
+                        double taxaServico,
+                        double taxaTransporte,
+                        double valorTotal,
+                        String status,
+                        Cardapio cardapioSelecionado,
+                        String observacoes,
+                        LocalDateTime dataCriacao,
+                        LocalTime horarioInicio,
+                        LocalTime horarioFim,
+                        String tipoEvento,
+                        boolean conflitoConfirmado) {
+        this(id, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento,
+                horarioInicio, horarioFim, tipoEvento, conflitoConfirmado,
+                local, quantidadeConvidados, precoPorPessoa, taxaServico, taxaTransporte, valorTotal,
+                status, cardapioSelecionado, observacoes, dataCriacao);
     }
 
     public void calcularValorTotalAutomatico() {
@@ -346,8 +413,75 @@ public class OrdemServico {
         this.dataCriacao = dataCriacao;
     }
 
+    public LocalTime getHorarioInicio() {
+        return horarioInicio != null ? horarioInicio : LocalTime.of(18, 0);
+    }
+
+    public void setHorarioInicio(LocalTime horarioInicio) {
+        this.horarioInicio = horarioInicio != null ? horarioInicio : LocalTime.of(18, 0);
+    }
+
+    public String getHorarioInicioFormatado() {
+        return getHorarioInicio().format(FORMATO_HORA);
+    }
+
+    public LocalTime getHorarioFim() {
+        return horarioFim != null ? horarioFim : LocalTime.of(22, 0);
+    }
+
+    public void setHorarioFim(LocalTime horarioFim) {
+        this.horarioFim = horarioFim != null ? horarioFim : LocalTime.of(22, 0);
+    }
+
+    public String getHorarioFimFormatado() {
+        return getHorarioFim().format(FORMATO_HORA);
+    }
+
+    public String getHorarioFormatado() {
+        return getHorarioInicioFormatado() + " às " + getHorarioFimFormatado();
+    }
+
+    public String getTipoEvento() {
+        return tipoEvento != null && !tipoEvento.trim().isEmpty() ? tipoEvento : "Casamento";
+    }
+
+    public void setTipoEvento(String tipoEvento) {
+        this.tipoEvento = tipoEvento != null && !tipoEvento.trim().isEmpty() ? tipoEvento.trim() : "Casamento";
+    }
+
+    public boolean isConflitoConfirmado() {
+        return conflitoConfirmado;
+    }
+
+    public void setConflitoConfirmado(boolean conflitoConfirmado) {
+        this.conflitoConfirmado = conflitoConfirmado;
+    }
+
+    /**
+     * Verifica se esta reserva possui sobreposição de horário com outra reserva na mesma data.
+     * Retorna true apenas se for no mesmo dia, nenhuma for 'Cancelado', e houver sobreposição nos intervalos.
+     */
+    public boolean temSobreposicaoCom(OrdemServico outra) {
+        if (outra == null || this.id == outra.getId()) {
+            return false;
+        }
+        if (this.dataEvento == null || outra.getDataEvento() == null || !this.dataEvento.equals(outra.getDataEvento())) {
+            return false;
+        }
+        if ("Cancelado".equalsIgnoreCase(this.status) || "Cancelado".equalsIgnoreCase(outra.getStatus())) {
+            return false;
+        }
+        LocalTime inicioA = getHorarioInicio();
+        LocalTime fimA = getHorarioFim();
+        LocalTime inicioB = outra.getHorarioInicio();
+        LocalTime fimB = outra.getHorarioFim();
+
+        // Duas faixas horárias [inicioA, fimA) e [inicioB, fimB) sobrepõem-se se:
+        return inicioA.isBefore(fimB) && inicioB.isBefore(fimA);
+    }
+
     @Override
     public String toString() {
-        return String.format("OS #%d - %s (%s) - %s", numeroOS, cliente, getDataEventoFormatada(), getValorTotalFormatado());
+        return String.format("OS #%d - %s (%s %s) - %s", numeroOS, cliente, getDataEventoFormatada(), getHorarioFormatado(), getValorTotalFormatado());
     }
 }

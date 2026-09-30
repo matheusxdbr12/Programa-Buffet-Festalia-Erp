@@ -7,6 +7,7 @@ import java.sql.SQLException;
 import java.sql.Statement;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -34,8 +35,9 @@ public class OrdemServicoDAO {
             INSERT INTO ordens_servico (
                 numero_os, nome_buffet, subtitulo_buffet, caminho_logo_buffet, cliente, telefone, data_evento, local_evento,
                 qtd_convidados, preco_por_pessoa, taxa_servico, taxa_transporte, valor_total, status,
-                cardapio_nome, cardapio_descricao, cardapio_itens, observacoes, data_criacao
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                cardapio_nome, cardapio_descricao, cardapio_itens, observacoes, data_criacao,
+                horario_inicio, horario_fim, tipo_evento, conflito_confirmado
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """;
 
         try (Connection conn = DatabaseManager.getConnection();
@@ -65,6 +67,10 @@ public class OrdemServicoDAO {
             ps.setString(17, cardapioItens);
             ps.setString(18, os.getObservacoes());
             ps.setString(19, (os.getDataCriacao() != null ? os.getDataCriacao() : LocalDateTime.now()).format(ISO_DATA_HORA));
+            ps.setString(20, os.getHorarioInicioFormatado());
+            ps.setString(21, os.getHorarioFimFormatado());
+            ps.setString(22, os.getTipoEvento());
+            ps.setInt(23, os.isConflitoConfirmado() ? 1 : 0);
 
             ps.executeUpdate();
 
@@ -82,7 +88,8 @@ public class OrdemServicoDAO {
                 nome_buffet = ?, subtitulo_buffet = ?, caminho_logo_buffet = ?, cliente = ?, telefone = ?, data_evento = ?, local_evento = ?,
                 qtd_convidados = ?, preco_por_pessoa = ?, taxa_servico = ?, taxa_transporte = ?,
                 valor_total = ?, status = ?, cardapio_nome = ?, cardapio_descricao = ?,
-                cardapio_itens = ?, observacoes = ?
+                cardapio_itens = ?, observacoes = ?,
+                horario_inicio = ?, horario_fim = ?, tipo_evento = ?, conflito_confirmado = ?
             WHERE id = ?
         """;
 
@@ -107,7 +114,11 @@ public class OrdemServicoDAO {
             ps.setString(15, c != null ? c.getDescricao() : "");
             ps.setString(16, c != null ? c.getItensComoTexto() : "");
             ps.setString(17, os.getObservacoes());
-            ps.setInt(18, os.getId());
+            ps.setString(18, os.getHorarioInicioFormatado());
+            ps.setString(19, os.getHorarioFimFormatado());
+            ps.setString(20, os.getTipoEvento());
+            ps.setInt(21, os.isConflitoConfirmado() ? 1 : 0);
+            ps.setInt(22, os.getId());
 
             ps.executeUpdate();
         }
@@ -266,7 +277,108 @@ public class OrdemServicoDAO {
             }
         } catch (SQLException ignored) {}
 
-        return new OrdemServico(id, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento, local,
+        LocalTime horarioInicio = LocalTime.of(18, 0);
+        try {
+            String hi = rs.getString("horario_inicio");
+            if (hi != null && !hi.trim().isEmpty()) {
+                horarioInicio = LocalTime.parse(hi.trim(), DateTimeFormatter.ofPattern("HH:mm"));
+            }
+        } catch (Exception ignored) {}
+
+        LocalTime horarioFim = LocalTime.of(22, 0);
+        try {
+            String hf = rs.getString("horario_fim");
+            if (hf != null && !hf.trim().isEmpty()) {
+                horarioFim = LocalTime.parse(hf.trim(), DateTimeFormatter.ofPattern("HH:mm"));
+            }
+        } catch (Exception ignored) {}
+
+        String tipoEvento = "Casamento";
+        try {
+            String te = rs.getString("tipo_evento");
+            if (te != null && !te.trim().isEmpty()) {
+                tipoEvento = te.trim();
+            }
+        } catch (SQLException ignored) {}
+
+        boolean conflitoConfirmado = false;
+        try {
+            conflitoConfirmado = rs.getInt("conflito_confirmado") == 1;
+        } catch (SQLException ignored) {}
+
+        return new OrdemServico(id, numeroOS, nomeBuffet, subtituloBuffet, caminhoLogoBuffet, cliente, telefone, dataEvento,
+                horarioInicio, horarioFim, tipoEvento, conflitoConfirmado, local,
                 qtdConvidados, precoPorPessoa, taxaServico, taxaTransporte, valorTotal, status, cardapio, observacoes, dataCriacao);
+    }
+
+    public OrdemServico buscarPorId(int id) {
+        String sql = "SELECT * FROM ordens_servico WHERE id = ?";
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, id);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return extrairOrdemServico(rs);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao buscar OS por ID: " + e.getMessage());
+        }
+        return null;
+    }
+
+    /**
+     * Busca todas as reservas que colidem em data e faixa horária com a reserva informada.
+     * Ignora reservas com status 'Cancelado' e ignora o próprio ID da OS que está sendo editada.
+     */
+    public List<OrdemServico> buscarConflitos(LocalDate data, LocalTime inicio, LocalTime fim, int idExcluir) {
+        List<OrdemServico> conflitos = new ArrayList<>();
+        if (data == null || inicio == null || fim == null) {
+            return conflitos;
+        }
+        String sql = "SELECT * FROM ordens_servico WHERE data_evento = ? AND status != 'Cancelado'";
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, data.format(ISO_DATA));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    OrdemServico existente = extrairOrdemServico(rs);
+                    if (existente.getId() != idExcluir) {
+                        LocalTime exInicio = existente.getHorarioInicio();
+                        LocalTime exFim = existente.getHorarioFim();
+                        if (inicio.isBefore(exFim) && exInicio.isBefore(fim)) {
+                            conflitos.add(existente);
+                        }
+                    }
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao buscar conflitos de reservas no banco: " + e.getMessage());
+        }
+        return conflitos;
+    }
+
+    /**
+     * Retorna reservas cadastradas em um intervalo de datas (para navegação no calendário).
+     */
+    public List<OrdemServico> listarPorPeriodo(LocalDate inicio, LocalDate fim) {
+        List<OrdemServico> lista = new ArrayList<>();
+        if (inicio == null || fim == null) {
+            return listarTodas();
+        }
+        String sql = "SELECT * FROM ordens_servico WHERE data_evento >= ? AND data_evento <= ? ORDER BY data_evento ASC, horario_inicio ASC";
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, inicio.format(ISO_DATA));
+            ps.setString(2, fim.format(ISO_DATA));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    lista.add(extrairOrdemServico(rs));
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao listar OS por período: " + e.getMessage());
+        }
+        return lista;
     }
 }

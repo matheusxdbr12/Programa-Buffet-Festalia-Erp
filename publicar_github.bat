@@ -30,7 +30,7 @@ echo [3/5] Inicializando repositorio e commit...
 if not exist ".git" git init
 git branch -M main
 git add -A
-git commit -m "feat: Festalia ERP v2.0 - Gestao de Buffets, Orcamentos, Cardapios e Marca D'Agua customizavel"
+git commit -m "feat: Calendário Visual de Reservas (Mês, Semana e Dia), Prevenção e Gestão de Conflitos e Ações Ágeis"
 
 echo [4/5] Publicando no GitHub...
 git remote remove origin 2>nul

@@ -64,6 +64,10 @@ public class DatabaseManager {
                 cardapio_nome TEXT NOT NULL,
                 cardapio_descricao TEXT,
                 cardapio_itens TEXT NOT NULL,
+                horario_inicio TEXT DEFAULT '18:00',
+                horario_fim TEXT DEFAULT '22:00',
+                tipo_evento TEXT DEFAULT 'Casamento',
+                conflito_confirmado INTEGER DEFAULT 0,
                 observacoes TEXT,
                 data_criacao TEXT NOT NULL
             );
@@ -82,6 +86,63 @@ public class DatabaseManager {
             stmt.execute(sqlTabelaCardapios);
             stmt.execute(sqlTabelaOrdensServico);
             stmt.execute(sqlTabelaConfiguracoes);
+
+            // Módulo de Gestão Financeira Avançada: Tabelas de Parcelamento, Pagamentos e Auditoria
+            String sqlTabelaParcelas = """
+                CREATE TABLE IF NOT EXISTS parcelas_os (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ordem_servico_id INTEGER NOT NULL,
+                    numero_parcela INTEGER NOT NULL,
+                    descricao TEXT NOT NULL,
+                    valor REAL NOT NULL,
+                    data_vencimento TEXT NOT NULL,
+                    forma_pagamento_sugerida TEXT DEFAULT 'PIX',
+                    status TEXT NOT NULL DEFAULT 'PENDENTE',
+                    observacoes TEXT,
+                    data_criacao TEXT NOT NULL,
+                    FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaParcelas);
+
+            String sqlTabelaPagamentos = """
+                CREATE TABLE IF NOT EXISTS pagamentos_parcela (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    parcela_id INTEGER NOT NULL,
+                    ordem_servico_id INTEGER NOT NULL,
+                    valor_pago REAL NOT NULL,
+                    data_pagamento TEXT NOT NULL,
+                    forma_pagamento TEXT NOT NULL,
+                    identificacao_transacao TEXT,
+                    observacoes TEXT,
+                    usuario_responsavel TEXT DEFAULT 'Operador',
+                    data_registro TEXT NOT NULL,
+                    FOREIGN KEY (parcela_id) REFERENCES parcelas_os(id) ON DELETE CASCADE,
+                    FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaPagamentos);
+
+            String sqlTabelaHistoricoFinanceiro = """
+                CREATE TABLE IF NOT EXISTS historico_financeiro_os (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ordem_servico_id INTEGER NOT NULL,
+                    tipo_operacao TEXT NOT NULL,
+                    descricao TEXT NOT NULL,
+                    valor REAL DEFAULT 0.0,
+                    usuario TEXT DEFAULT 'Operador',
+                    data_hora TEXT NOT NULL,
+                    FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaHistoricoFinanceiro);
+
+            try {
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_parcelas_os ON parcelas_os(ordem_servico_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_pagamentos_parcela ON pagamentos_parcela(parcela_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_pagamentos_os ON pagamentos_parcela(ordem_servico_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_hist_fin_os ON historico_financeiro_os(ordem_servico_id);");
+            } catch (SQLException ignored) {}
 
             // Migração de colunas caso o banco já existisse
             migrarColunasTaxasSeNecessario(stmt);
@@ -117,6 +178,26 @@ public class DatabaseManager {
         }
         try {
             stmt.execute("ALTER TABLE ordens_servico ADD COLUMN caminho_logo_buffet TEXT");
+        } catch (SQLException ignored) {
+            // Coluna já existe
+        }
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN horario_inicio TEXT DEFAULT '18:00'");
+        } catch (SQLException ignored) {
+            // Coluna já existe
+        }
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN horario_fim TEXT DEFAULT '22:00'");
+        } catch (SQLException ignored) {
+            // Coluna já existe
+        }
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN tipo_evento TEXT DEFAULT 'Casamento'");
+        } catch (SQLException ignored) {
+            // Coluna já existe
+        }
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN conflito_confirmado INTEGER DEFAULT 0");
         } catch (SQLException ignored) {
             // Coluna já existe
         }

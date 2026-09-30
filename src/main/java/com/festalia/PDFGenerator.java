@@ -302,10 +302,10 @@ public class PDFGenerator {
             }
         }
 
-        // 2. Tenta carregar o caminho salvo nas configurações do buffet
+        // 2. Tenta carregar o caminho salvo nas configurações do buffet (ignora mendez se padrão)
         try {
             String configLogo = DatabaseManager.obterConfiguracao("buffet.logo_path", null);
-            if (configLogo != null && !configLogo.trim().isEmpty()) {
+            if (configLogo != null && !configLogo.trim().isEmpty() && !configLogo.toLowerCase().contains("mendez")) {
                 File fConfig = new File(configLogo.trim());
                 if (fConfig.exists() && fConfig.isFile() && fConfig.length() > 0) {
                     return ImageDataFactory.create(fConfig.getAbsolutePath());
@@ -313,12 +313,12 @@ public class PDFGenerator {
             }
         } catch (Exception ignored) {}
 
-        // 3. Tenta carregar do classpath (mendez_logo.png ou festalia_logo.jpg)
+        // 3. Tenta carregar do classpath (festalia_logo.jpg primeiro)
         String[] recursosClasspath = {
-            "/mendez_logo.png",
             "/festalia_logo.jpg",
-            "mendez_logo.png",
-            "festalia_logo.jpg"
+            "festalia_logo.jpg",
+            "/mendez_logo.png",
+            "mendez_logo.png"
         };
         for (String recurso : recursosClasspath) {
             try (InputStream is = PDFGenerator.class.getResourceAsStream(recurso.startsWith("/") ? recurso : "/" + recurso)) {
@@ -331,18 +331,16 @@ public class PDFGenerator {
             } catch (Exception ignored) {}
         }
 
-        // 4. Múltiplos caminhos de arquivos locais de desenvolvimento e execução
+        // 4. Múltiplos caminhos de arquivos locais de desenvolvimento e execução (Festalia primeiro)
         String[] caminhos = {
-            "mendez_logo.png",
-            "src/main/resources/mendez_logo.png",
-            "target/classes/mendez_logo.png",
-            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790705846854.jpg",
             "festalia_logo.jpg",
             "src/main/resources/festalia_logo.jpg",
             "target/classes/festalia_logo.jpg",
-            "C:/Users/matheus.souza/Documents/Programa do BUFFET GUI/mendez_logo.png",
+            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790699283882.jpg",
             "C:/Users/matheus.souza/Documents/Programa do BUFFET GUI/festalia_logo.jpg",
-            "C:/Users/matheus.souza/.gemini/antigravity-ide/brain/6dae6d28-dee6-46ad-97ac-f0cbf5f1cd61/.user_uploaded/media_1790699283882.jpg"
+            "mendez_logo.png",
+            "src/main/resources/mendez_logo.png",
+            "target/classes/mendez_logo.png"
         };
 
         for (String caminho : caminhos) {
