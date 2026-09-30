@@ -13,7 +13,7 @@ Write-Host ""
 
 $ghUsername = "matheusxdbr12"
 $repoNome = "programa-buffet-festalia-erp"
-$desc = "Festalia ERP - Sistema Integrado de Gestao para Buffets e Eventos com Gestao Financeira Avancada, Parcelamento, Recibos e Termos de Quitacao em PDF"
+$desc = "Festalia ERP - Sistema Integrado de Gestao para Buffets e Eventos com Gestao Financeira Avancada e Modulo Completo de Contrato de Prestacao de Servicos em PDF"
 
 # 1. Configurar credenciais do Git usando o GitHub CLI
 Write-Host "[1/5] Vinculando credenciais do GitHub CLI ao Git..." -ForegroundColor Yellow
@@ -52,10 +52,10 @@ $status = git status --porcelain
 $hasCommits = git rev-parse --verify HEAD 2>$null
 
 if ($status) {
-    Write-Host "  -> Criando commit com Gestao Financeira Avancada..." -ForegroundColor Gray
-    git commit -m "feat: Módulo de Gestão Financeira Avançada (Parcelamento, Vencimentos, Pagamentos Parciais, Recibos e Termo de Quitação em PDF)"
+    Write-Host "  -> Criando commit v2.1.4 (Alocação de OS para Contratos, validações e memórias)..." -ForegroundColor Gray
+    git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão"
 } elseif (-not $hasCommits) {
-    git commit -m "feat: Módulo de Gestão Financeira Avançada (Parcelamento, Vencimentos, Pagamentos Parciais, Recibos e Termo de Quitação em PDF)" --allow-empty
+    git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão" --allow-empty
 } else {
     Write-Host "  -> Nenhuma alteracao pendente. Ultimo commit preservado." -ForegroundColor Gray
 }

@@ -28,6 +28,14 @@ public final class NumeroPorExtensoUtil {
      * Converte um valor numérico em reais por extenso.
      * Exemplo: 2500.50 -> "dois mil e quinhentos reais e cinquenta centavos"
      */
+    public static String converter(double valor) {
+        return converterParaExtenso(valor);
+    }
+
+    public static String converter(int valor) {
+        return converterParaExtenso((double) valor);
+    }
+
     public static String converterParaExtenso(double valor) {
         if (valor < 0) {
             return "menos " + converterParaExtenso(-valor);

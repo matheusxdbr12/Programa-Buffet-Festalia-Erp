@@ -228,6 +228,18 @@ public class DetalhesReservaDialog extends JDialog {
             }
         });
 
+        JButton btnContrato = new JButton("Contrato", com.festalia.util.IconesFestalia.contrato(14, new Color(41, 128, 185)));
+        btnContrato.setIconTextGap(6);
+        btnContrato.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnContrato.setBackground(new Color(235, 248, 255));
+        btnContrato.setToolTipText("Visualizar, Revisar e Emitir Contrato de Prestação de Serviços");
+        btnContrato.addActionListener(e -> {
+            new com.festalia.contrato.GerarRevisarContratoDialog(this, os.getId()).setVisible(true);
+            if (listener != null) {
+                listener.onReservaAlterada();
+            }
+        });
+
         JButton btnPdf = new JButton("Gerar PDF", com.festalia.util.IconesFestalia.pdf(14, new Color(37, 99, 235)));
         btnPdf.setIconTextGap(6);
         btnPdf.setFont(new Font("Segoe UI", Font.PLAIN, 12));

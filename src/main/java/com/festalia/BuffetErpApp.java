@@ -6,6 +6,7 @@ import com.festalia.calendario.ReservaConflitoValidator;
 import com.festalia.financeiro.FinanceiroDAO;
 import com.festalia.financeiro.GestaoFinanceiraDialog;
 import com.festalia.financeiro.ResumoFinanceiroOS;
+import com.festalia.contrato.*;
 
 import javax.swing.*;
 import javax.swing.border.CompoundBorder;
@@ -58,6 +59,8 @@ public class BuffetErpApp extends JFrame {
     // Gerenciador de Abas e Calendário
     private JTabbedPane abas;
     private CalendarioPanel painelCalendario;
+    private ContratosTabPanel painelContratos;
+    private JPanel painelDocumentacaoContrato;
     private int idOrdemServicoEmEdicao = 0;
 
     // Componentes da Aba 1 (Nova OS)
@@ -155,6 +158,13 @@ public class BuffetErpApp extends JFrame {
         abas.addTab("  Calendário de Reservas", com.festalia.util.IconesFestalia.calendario(16, COR_AZUL_FESTALIA), criarAbaCalendario());
         abas.addTab("  Histórico & Faturamento", com.festalia.util.IconesFestalia.pdf(16, COR_AZUL_FESTALIA), criarAbaHistorico());
         abas.addTab("  Portfólio de Cardápios & Preços", com.festalia.util.IconesFestalia.cardapio(16, COR_AZUL_FESTALIA), criarAbaPortfólio());
+        abas.addTab("  Contratos", com.festalia.util.IconesFestalia.contrato(16, COR_AZUL_FESTALIA), criarAbaContratos());
+
+        abas.addChangeListener(e -> {
+            if (abas.getSelectedIndex() == 4 && painelContratos != null) {
+                painelContratos.recarregarDados();
+            }
+        });
 
         painelGeral.add(abas, BorderLayout.CENTER);
 
@@ -602,6 +612,11 @@ public class BuffetErpApp extends JFrame {
         JScrollPane scroll = new JScrollPane(txtObservacoes);
 
         painel.add(scroll, BorderLayout.CENTER);
+
+        // Painel de Documentação e Contrato Integrado (Requisito #13)
+        painelDocumentacaoContrato = criarPainelDocumentacaoContrato();
+        painel.add(painelDocumentacaoContrato, BorderLayout.SOUTH);
+
         return painel;
     }
 
@@ -619,6 +634,12 @@ public class BuffetErpApp extends JFrame {
         btnCronogramaFinanceiro.setToolTipText("Gerenciar parcelamento, pagamentos e recibos desta OS");
         btnCronogramaFinanceiro.addActionListener(e -> abrirCronogramaFinanceiroNovaOS());
 
+        JButton btnGerarContrato = new JButton("Gerar Contrato", com.festalia.util.IconesFestalia.contrato(14, COR_AZUL_FESTALIA));
+        btnGerarContrato.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnGerarContrato.putClientProperty("JButton.buttonType", "default");
+        btnGerarContrato.setToolTipText("Gerar minuta jurídica e PDF do Contrato de Prestação de Serviços para esta OS");
+        btnGerarContrato.addActionListener(e -> acaoGerarContratoNovaOS());
+
         JButton btnSalvarHistorico = new JButton("Salvar no Histórico");
         btnSalvarHistorico.setFont(new Font("Segoe UI", Font.BOLD, 12));
         btnSalvarHistorico.putClientProperty("JButton.buttonType", "default");
@@ -632,6 +653,7 @@ public class BuffetErpApp extends JFrame {
 
         painel.add(btnLimpar);
         painel.add(btnCronogramaFinanceiro);
+        painel.add(btnGerarContrato);
         painel.add(btnSalvarHistorico);
         painel.add(btnGerarPdf);
         return painel;
@@ -974,6 +996,7 @@ public class BuffetErpApp extends JFrame {
         }
 
         atualizarCalculoValorTotal();
+        atualizarPainelDocumentacaoContrato();
 
         if (abas != null) {
             abas.setSelectedIndex(0);
@@ -982,6 +1005,7 @@ public class BuffetErpApp extends JFrame {
 
     private void limparCamposNovaOS() {
         this.idOrdemServicoEmEdicao = 0;
+        atualizarPainelDocumentacaoContrato();
         txtNumeroOS.setText(String.valueOf(DatabaseManager.gerarProximoNumeroOS()));
         txtCliente.setText("");
         txtTelefone.setText("");
@@ -1061,7 +1085,14 @@ public class BuffetErpApp extends JFrame {
         btnExcluir.setForeground(new Color(192, 57, 43));
         btnExcluir.addActionListener(e -> excluirOsSelecionada());
 
+        JButton btnContrato = new JButton("Contrato", com.festalia.util.IconesFestalia.contrato(13, COR_AZUL_FESTALIA));
+        btnContrato.setFont(new Font("Segoe UI", Font.BOLD, 12));
+        btnContrato.putClientProperty("JButton.buttonType", "default");
+        btnContrato.setToolTipText("Gerenciar ou emitir Contrato de Prestação de Serviços desta OS");
+        btnContrato.addActionListener(e -> abrirContratoOsSelecionadaHistorico());
+
         painelAcoes.add(btnFinanceiro);
+        painelAcoes.add(btnContrato);
         painelAcoes.add(btnEditarOs);
         painelAcoes.add(btnReemitirPdf);
         painelAcoes.add(btnMudarStatus);
@@ -1801,6 +1832,167 @@ public class BuffetErpApp extends JFrame {
         g2.drawImage(raw, 0, 0, width, height, null);
         g2.dispose();
         return new ImageIcon(resized);
+    }
+
+    // =========================================================================
+    // ABA 5: MÓDULO DE CONTRATOS DE PRESTAÇÃO DE SERVIÇOS
+    // =========================================================================
+    private JPanel criarAbaContratos() {
+        painelContratos = new ContratosTabPanel(this);
+        return painelContratos;
+    }
+
+    private JPanel criarPainelDocumentacaoContrato() {
+        JPanel painel = new JPanel(new BorderLayout(8, 4));
+        painel.setOpaque(false);
+        painel.setBorder(new CompoundBorder(
+                new TitledBorder(new LineBorder(new Color(218, 224, 233), 1, true), " Documentação & Contrato ",
+                        TitledBorder.LEADING, TitledBorder.TOP, new Font("Segoe UI", Font.BOLD, 11), COR_ESCURA),
+                new EmptyBorder(4, 8, 4, 8)
+        ));
+
+        atualizarPainelDocumentacaoContratoInternal(painel);
+        return painel;
+    }
+
+    private void atualizarPainelDocumentacaoContrato() {
+        if (painelDocumentacaoContrato != null) {
+            painelDocumentacaoContrato.removeAll();
+            atualizarPainelDocumentacaoContratoInternal(painelDocumentacaoContrato);
+            painelDocumentacaoContrato.revalidate();
+            painelDocumentacaoContrato.repaint();
+        }
+    }
+
+    private void atualizarPainelDocumentacaoContratoInternal(JPanel painel) {
+        if (idOrdemServicoEmEdicao <= 0) {
+            JPanel p = new JPanel(new FlowLayout(FlowLayout.LEFT, 6, 2));
+            p.setOpaque(false);
+            JLabel lbl = new JLabel("Salve a Ordem de Serviço para habilitar a geração e o versionamento do Contrato.");
+            lbl.setFont(new Font("Segoe UI", Font.ITALIC, 11));
+            lbl.setForeground(new Color(100, 116, 139));
+            p.add(lbl);
+            painel.add(p, BorderLayout.CENTER);
+            return;
+        }
+
+        Contrato c = ContratoDAO.obterPorOsId(idOrdemServicoEmEdicao);
+        if (c == null) {
+            JPanel p = new JPanel(new BorderLayout(6, 0));
+            p.setOpaque(false);
+
+            JLabel lbl = new JLabel("Nenhum contrato gerado para esta OS ainda.");
+            lbl.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            lbl.setForeground(new Color(100, 116, 139));
+
+            JButton btnGerar = new JButton("Gerar Contrato", com.festalia.util.IconesFestalia.contrato(12, COR_AZUL_FESTALIA));
+            btnGerar.setFont(new Font("Segoe UI", Font.BOLD, 11));
+            btnGerar.addActionListener(e -> acaoGerarContratoNovaOS());
+
+            p.add(lbl, BorderLayout.WEST);
+            p.add(btnGerar, BorderLayout.EAST);
+            painel.add(p, BorderLayout.CENTER);
+        } else {
+            JPanel p = new JPanel(new BorderLayout(8, 0));
+            p.setOpaque(false);
+
+            JPanel pInfo = new JPanel(new FlowLayout(FlowLayout.LEFT, 8, 2));
+            pInfo.setOpaque(false);
+
+            JLabel lblDoc = new JLabel("Contrato " + c.getNumeroContrato());
+            lblDoc.setFont(new Font("Segoe UI", Font.BOLD, 12));
+            lblDoc.setForeground(COR_AZUL_FESTALIA);
+
+            JLabel lblBadge = new JLabel(" " + c.getStatus().getDescricao() + " ");
+            lblBadge.setFont(new Font("Segoe UI", Font.BOLD, 10));
+            lblBadge.setOpaque(true);
+            lblBadge.setBackground(c.getStatus().getColorFundo());
+            lblBadge.setForeground(c.getStatus().getColorTexto());
+            lblBadge.setBorder(BorderFactory.createLineBorder(c.getStatus().getColorTexto(), 1, true));
+
+            JLabel lblV = new JLabel("Versão: " + c.getVersaoAtual());
+            lblV.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            lblV.setForeground(new Color(71, 85, 105));
+
+            pInfo.add(lblDoc);
+            pInfo.add(lblBadge);
+            pInfo.add(lblV);
+
+            JPanel pBtns = new JPanel(new FlowLayout(FlowLayout.RIGHT, 4, 0));
+            pBtns.setOpaque(false);
+
+            JButton btnVer = new JButton("Visualizar");
+            btnVer.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnVer.addActionListener(e -> {
+                GerarRevisarContratoDialog dlg = new GerarRevisarContratoDialog(this, idOrdemServicoEmEdicao);
+                dlg.setVisible(true);
+                atualizarPainelDocumentacaoContrato();
+                if (painelContratos != null) painelContratos.recarregarDados();
+            });
+
+            JButton btnPdf = new JButton("Baixar PDF");
+            btnPdf.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnPdf.addActionListener(e -> {
+                if (c.getArquivoPdfPath() != null && new File(c.getArquivoPdfPath()).exists()) {
+                    try {
+                        Desktop.getDesktop().open(new File(c.getArquivoPdfPath()));
+                    } catch (Exception ex) {
+                        JOptionPane.showMessageDialog(this, "Não foi possível abrir o PDF: " + ex.getMessage());
+                    }
+                } else {
+                    GerarRevisarContratoDialog dlg = new GerarRevisarContratoDialog(this, idOrdemServicoEmEdicao);
+                    dlg.setVisible(true);
+                    atualizarPainelDocumentacaoContrato();
+                }
+            });
+
+            JButton btnNovaV = new JButton("Nova Versão");
+            btnNovaV.setFont(new Font("Segoe UI", Font.PLAIN, 11));
+            btnNovaV.addActionListener(e -> {
+                GerarRevisarContratoDialog dlg = new GerarRevisarContratoDialog(this, idOrdemServicoEmEdicao);
+                dlg.setVisible(true);
+                atualizarPainelDocumentacaoContrato();
+                if (painelContratos != null) painelContratos.recarregarDados();
+            });
+
+            pBtns.add(btnVer);
+            pBtns.add(btnPdf);
+            pBtns.add(btnNovaV);
+
+            p.add(pInfo, BorderLayout.WEST);
+            p.add(pBtns, BorderLayout.EAST);
+            painel.add(p, BorderLayout.CENTER);
+        }
+    }
+
+    private void acaoGerarContratoNovaOS() {
+        if (idOrdemServicoEmEdicao <= 0) {
+            OrdemServico osSalva = executarSalvamentoOS(false, true);
+            if (osSalva == null || osSalva.getId() <= 0) {
+                return;
+            }
+        }
+
+        GerarRevisarContratoDialog dlg = new GerarRevisarContratoDialog(this, idOrdemServicoEmEdicao);
+        dlg.setVisible(true);
+        atualizarPainelDocumentacaoContrato();
+        if (painelContratos != null) {
+            painelContratos.recarregarDados();
+        }
+    }
+
+    private void abrirContratoOsSelecionadaHistorico() {
+        int linha = tabelaHistorico.getSelectedRow();
+        if (linha < 0) {
+            JOptionPane.showMessageDialog(this, "Selecione uma Ordem de Serviço na tabela para gerenciar o contrato.", "Aviso", JOptionPane.WARNING_MESSAGE);
+            return;
+        }
+        int idOs = (int) modelHistorico.getValueAt(linha, 0);
+        GerarRevisarContratoDialog dlg = new GerarRevisarContratoDialog(this, idOs);
+        dlg.setVisible(true);
+        if (painelContratos != null) {
+            painelContratos.recarregarDados();
+        }
     }
 
     // =========================================================================

@@ -310,8 +310,9 @@ public class GeradorParcelamentoDialog extends JDialog {
             ParcelaOS ultima = listaTemporaria.get(listaTemporaria.size() - 1);
 
             if (ultima.getDataVencimento().isAfter(dataLimite)) {
+                lblAvisoPrazoEvento.setIcon(com.festalia.util.IconesFestalia.alerta(14, new Color(217, 119, 6)));
                 lblAvisoPrazoEvento.setText(String.format(
-                        "⚠️ Atenção: A última parcela vence em %s, posterior ao limite recomendado (%s, %d dias antes do evento)!",
+                        " Atenção: A última parcela vence em %s, posterior ao limite recomendado (%s, %d dias antes do evento)!",
                         ultima.getDataVencimentoFormatada(),
                         dataLimite.format(DateTimeFormatter.ofPattern("dd/MM/yyyy")),
                         diasLimite

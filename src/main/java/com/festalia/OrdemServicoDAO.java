@@ -327,6 +327,23 @@ public class OrdemServicoDAO {
         return null;
     }
 
+    public OrdemServico buscarPorNumeroOS(int numeroOS) {
+        String sql = "SELECT * FROM ordens_servico WHERE numero_os = ? OR id = ? ORDER BY id DESC LIMIT 1";
+        try (Connection conn = DatabaseManager.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setInt(1, numeroOS);
+            ps.setInt(2, numeroOS);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return extrairOrdemServico(rs);
+                }
+            }
+        } catch (SQLException e) {
+            System.err.println("Erro ao buscar OS por número: " + e.getMessage());
+        }
+        return null;
+    }
+
     /**
      * Busca todas as reservas que colidem em data e faixa horária com a reserva informada.
      * Ignora reservas com status 'Cancelado' e ignora o próprio ID da OS que está sendo editada.

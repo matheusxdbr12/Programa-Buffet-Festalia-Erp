@@ -422,6 +422,121 @@ public final class IconesFestalia {
         });
     }
 
+    /**
+     * Ícone de Contrato / Documento Jurídico (Folha com dobra no canto superior direito e linhas de texto).
+     */
+    public static Icon contrato(int tamanho, Color cor) {
+        return criarIcone(tamanho, tamanho, g2 -> {
+            g2.setColor(cor);
+            float w = tamanho;
+            float h = tamanho;
+            float strokeW = Math.max(1.5f, w * 0.085f);
+            g2.setStroke(new BasicStroke(strokeW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+            // Margens
+            float x1 = w * 0.20f;
+            float y1 = h * 0.12f;
+            float x2 = w * 0.80f;
+            float y2 = h * 0.88f;
+            float fold = w * 0.22f;
+
+            // Folha com canto dobrado
+            Path2D.Float folha = new Path2D.Float();
+            folha.moveTo(x1, y1);
+            folha.lineTo(x2 - fold, y1);
+            folha.lineTo(x2, y1 + fold);
+            folha.lineTo(x2, y2);
+            folha.lineTo(x1, y2);
+            folha.closePath();
+            g2.draw(folha);
+
+            // Dobra do canto
+            Path2D.Float dobra = new Path2D.Float();
+            dobra.moveTo(x2 - fold, y1);
+            dobra.lineTo(x2 - fold, y1 + fold);
+            dobra.lineTo(x2, y1 + fold);
+            g2.draw(dobra);
+
+            // Linhas de texto / cláusulas
+            float lineStroke = Math.max(1.2f, w * 0.065f);
+            g2.setStroke(new BasicStroke(lineStroke, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+            g2.draw(new Line2D.Float(w * 0.30f, h * 0.42f, w * 0.70f, h * 0.42f));
+            g2.draw(new Line2D.Float(w * 0.30f, h * 0.54f, w * 0.70f, h * 0.54f));
+            g2.draw(new Line2D.Float(w * 0.30f, h * 0.66f, w * 0.58f, h * 0.66f));
+
+            // Carimbo / Selo de assinatura no rodapé
+            g2.draw(new Line2D.Float(w * 0.30f, h * 0.78f, w * 0.50f, h * 0.78f));
+        });
+    }
+
+    /**
+     * Ícone de Versão / Histórico (Relógio com seta circular).
+     */
+    public static Icon versao(int tamanho, Color cor) {
+        return criarIcone(tamanho, tamanho, g2 -> {
+            g2.setColor(cor);
+            float w = tamanho;
+            float h = tamanho;
+            float strokeW = Math.max(1.5f, w * 0.09f);
+            g2.setStroke(new BasicStroke(strokeW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+            // Arco circular quase fechado
+            g2.draw(new Arc2D.Float(w * 0.16f, h * 0.16f, w * 0.68f, h * 0.68f, 45, 290, Arc2D.OPEN));
+
+            // Ponteiros
+            g2.draw(new Line2D.Float(w * 0.50f, h * 0.50f, w * 0.50f, h * 0.30f));
+            g2.draw(new Line2D.Float(w * 0.50f, h * 0.50f, w * 0.65f, h * 0.50f));
+
+            // Ponta da seta no arco
+            Path2D.Float seta = new Path2D.Float();
+            seta.moveTo(w * 0.85f, h * 0.25f);
+            seta.lineTo(w * 0.70f, h * 0.18f);
+            seta.lineTo(w * 0.76f, h * 0.34f);
+            g2.draw(seta);
+        });
+    }
+
+    /**
+     * Ícone de Balança da Justiça / Jurídico (para cláusulas e termos legais).
+     */
+    public static Icon balanca(int tamanho, Color cor) {
+        return criarIcone(tamanho, tamanho, g2 -> {
+            g2.setColor(cor);
+            float w = tamanho;
+            float h = tamanho;
+            float strokeW = Math.max(1.3f, w * 0.08f);
+            g2.setStroke(new BasicStroke(strokeW, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+
+            // Haste vertical central
+            g2.draw(new Line2D.Float(w * 0.5f, h * 0.15f, w * 0.5f, h * 0.88f));
+
+            // Base triangular inferior
+            Path2D.Float base = new Path2D.Float();
+            base.moveTo(w * 0.32f, h * 0.88f);
+            base.lineTo(w * 0.68f, h * 0.88f);
+            base.lineTo(w * 0.50f, h * 0.78f);
+            base.closePath();
+            g2.fill(base);
+
+            // Travessão horizontal superior
+            g2.draw(new Line2D.Float(w * 0.16f, h * 0.28f, w * 0.84f, h * 0.28f));
+
+            // Prato esquerdo: fios e prato
+            g2.draw(new Line2D.Float(w * 0.16f, h * 0.28f, w * 0.08f, h * 0.56f));
+            g2.draw(new Line2D.Float(w * 0.16f, h * 0.28f, w * 0.24f, h * 0.56f));
+            g2.draw(new Arc2D.Float(w * 0.06f, h * 0.50f, w * 0.20f, h * 0.15f, 180, 180, Arc2D.OPEN));
+
+            // Prato direito: fios e prato
+            g2.draw(new Line2D.Float(w * 0.84f, h * 0.28f, w * 0.76f, h * 0.56f));
+            g2.draw(new Line2D.Float(w * 0.84f, h * 0.28f, w * 0.92f, h * 0.56f));
+            g2.draw(new Arc2D.Float(w * 0.74f, h * 0.50f, w * 0.20f, h * 0.15f, 180, 180, Arc2D.OPEN));
+
+            // Ponto central do topo
+            float dotR = Math.max(1.2f, w * 0.06f);
+            g2.fill(new Ellipse2D.Float(w * 0.5f - dotR, h * 0.16f - dotR, dotR * 2, dotR * 2));
+        });
+    }
+
     private static Icon criarIcone(int w, int h, Consumer<Graphics2D> renderizador) {
         return new Icon() {
             @Override

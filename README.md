@@ -64,6 +64,31 @@ Projetado especialmente para empresas de buffet, salões de festas, assessores e
   - *Coquetel Corporativo Finger Food*
 - **Tabela de Preços por Pessoa:** Precificação base atualizada automaticamente ao selecionar o cardápio na nova OS.
 
+### 5. ⚖️ Módulo de Contrato de Prestação de Serviços (Integrado à OS)
+- **Central de Contratos (Guia 📄 Contratos):** Gestão centralizada dos contratos com 5 cartões de indicadores em tempo real (*Gerados*, *Pendentes/Rascunhos*, *Aguardando Assinatura*, *Assinados*, *Cancelados*), tabela filtrável com busca instantânea e atalhos operacionais.
+- **Preenchimento Automático Multidimensional:** Captura e vincula automaticamente os dados da empresa emissora (Razão Social, CNPJ, endereço, foro, representante), qualificação do cliente/contratante (Nome, CPF/CNPJ, RG, endereço, contatos), detalhes do evento da OS (Data, horário, local, convidados, cardápio) e integração com o cronograma financeiro.
+- **Estrutura com 14 Cláusulas Jurídicas Padrão:** Em conformidade com o Código Civil, Código de Defesa do Consumidor (Lei 8.078/1990) e Lei Geral de Proteção de Dados (Lei 13.709/2018):
+  1. *Do Objeto*
+  2. *Do Evento*
+  3. *Dos Serviços e Cardápio*
+  4. *Do Valor e Condições de Pagamento (Integrado às Parcelas da OS)*
+  5. *Das Obrigações da Contratada*
+  6. *Das Obrigações do Contratante*
+  7. *Do Cancelamento e da Rescisão Proporcional*
+  8. *Do Direito de Arrependimento (CDC Art. 49)*
+  9. *Dos Danos a Bens, Louças e Equipamentos*
+  10. *Da Alteração de Escopo do Evento*
+  11. *Da Execução dos Serviços*
+  12. *Da Proteção de Dados (LGPD)*
+  13. *Das Disposições Gerais*
+  14. *Do Foro de Eleição*
+- **Sistema de Modelos:** Suporte nativo para múltiplos perfis de evento (*Buffet Completo*, *Casamento*, *Aniversário*, *Corporativo*, *Confraternização*, *Formatura*).
+- **Personalização Dinâmica de Cláusulas:** Opções de habilitar/desabilitar cláusulas opcionais (cancelamento, arrependimento externo, danos a louças, LGPD, testemunhas) antes da emissão.
+- **Validação Prévia de Dados Obrigatórios:** Checklist visual rigoroso que alerta e bloqueia a emissão formal caso faltem dados essenciais como CPF/CNPJ ou cronograma inconsistente.
+- **Controle de Versões & Auditoria Completa:** Histórico imutável de versões (`1.0`, `1.1`, `2.0`), trilha de auditoria registrando responsáveis, datas e justificativas de cancelamento ou alterações.
+- **Emissão de PDF Jurídico de Alta Resolução:** Geração em iText 7 com layout timbrado, paginação dinâmica (*Página X de Y*), marca d'água discreta e espaço para 4 assinaturas formais (*Contratada*, *Contratante*, *Testemunha 1* e *Testemunha 2*).
+- **Integração Total na OS:** Seção *Documentação* diretamente no formulário da OS e botão *📄 Gerar Contrato* na barra operacional e no calendário.
+
 ---
 
 ## 🏗️ Arquitetura do Projeto

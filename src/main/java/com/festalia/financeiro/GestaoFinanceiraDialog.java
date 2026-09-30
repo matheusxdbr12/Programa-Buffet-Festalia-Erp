@@ -409,7 +409,7 @@ public class GestaoFinanceiraDialog extends JDialog {
 
         // Banner de Alerta de Inadimplência
         if (resumoAtual.temParcelasVencidas()) {
-            lblTextoInadimplencia.setText(String.format("⚠️ Atenção: Esta OS possui %d parcela(s) vencida(s) totalizando %s em atraso!",
+            lblTextoInadimplencia.setText(String.format("Atenção: Esta OS possui %d parcela(s) vencida(s) totalizando %s em atraso!",
                     resumoAtual.getQuantidadeVencidas(), resumoAtual.getTotalVencidoFormatado()));
             bannerInadimplencia.setVisible(true);
         } else {

@@ -30,7 +30,7 @@ echo [3/5] Inicializando repositorio e commit...
 if not exist ".git" git init
 git branch -M main
 git add -A
-git commit -m "feat: Calendário Visual de Reservas (Mês, Semana e Dia), Prevenção e Gestão de Conflitos e Ações Ágeis"
+git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão"
 
 echo [4/5] Publicando no GitHub...
 git remote remove origin 2>nul

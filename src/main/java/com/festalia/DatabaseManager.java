@@ -137,15 +137,92 @@ public class DatabaseManager {
             """;
             stmt.execute(sqlTabelaHistoricoFinanceiro);
 
+            // =========================================================================
+            // MÓDULO DE CONTRATOS DE PRESTAÇÃO DE SERVIÇOS: Tabelas, Versões e Auditoria
+            // =========================================================================
+            String sqlTabelaContratos = """
+                CREATE TABLE IF NOT EXISTS contratos (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    ordem_servico_id INTEGER NOT NULL,
+                    numero_contrato TEXT NOT NULL UNIQUE,
+                    modelo_tipo TEXT DEFAULT 'BUFFET',
+                    versao_atual TEXT DEFAULT '1.0',
+                    status TEXT NOT NULL DEFAULT 'RASCUNHO',
+                    contratante_nome TEXT NOT NULL,
+                    contratante_cpf_cnpj TEXT,
+                    contratante_rg TEXT,
+                    contratante_endereco TEXT,
+                    contratante_telefone TEXT,
+                    contratante_email TEXT,
+                    empresa_razao_social TEXT,
+                    empresa_nome_fantasia TEXT,
+                    empresa_cnpj TEXT,
+                    empresa_endereco TEXT,
+                    empresa_telefone TEXT,
+                    empresa_email TEXT,
+                    empresa_representante_nome TEXT,
+                    empresa_representante_cpf TEXT,
+                    empresa_cidade_foro TEXT,
+                    valor_total REAL NOT NULL DEFAULT 0.0,
+                    data_evento TEXT,
+                    data_emissao TEXT,
+                    data_assinatura TEXT,
+                    data_cancelamento TEXT,
+                    observacoes_especiais TEXT,
+                    caminho_pdf TEXT,
+                    data_criacao TEXT NOT NULL,
+                    data_atualizacao TEXT NOT NULL,
+                    FOREIGN KEY (ordem_servico_id) REFERENCES ordens_servico(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaContratos);
+
+            String sqlTabelaContratosVersoes = """
+                CREATE TABLE IF NOT EXISTS contratos_versoes (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contrato_id INTEGER NOT NULL,
+                    versao TEXT NOT NULL,
+                    status TEXT NOT NULL,
+                    conteudo_minuta TEXT NOT NULL,
+                    parametros_config TEXT,
+                    motivo_alteracao TEXT,
+                    usuario_responsavel TEXT DEFAULT 'Operador',
+                    data_registro TEXT NOT NULL,
+                    caminho_pdf TEXT,
+                    FOREIGN KEY (contrato_id) REFERENCES contratos(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaContratosVersoes);
+
+            String sqlTabelaContratosAuditoria = """
+                CREATE TABLE IF NOT EXISTS contratos_auditoria (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    contrato_id INTEGER NOT NULL,
+                    tipo_operacao TEXT NOT NULL,
+                    descricao TEXT NOT NULL,
+                    versao TEXT,
+                    usuario TEXT DEFAULT 'Operador',
+                    data_hora TEXT NOT NULL,
+                    FOREIGN KEY (contrato_id) REFERENCES contratos(id) ON DELETE CASCADE
+                );
+            """;
+            stmt.execute(sqlTabelaContratosAuditoria);
+
             try {
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_parcelas_os ON parcelas_os(ordem_servico_id);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_pagamentos_parcela ON pagamentos_parcela(parcela_id);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_pagamentos_os ON pagamentos_parcela(ordem_servico_id);");
                 stmt.execute("CREATE INDEX IF NOT EXISTS idx_hist_fin_os ON historico_financeiro_os(ordem_servico_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_contratos_os ON contratos(ordem_servico_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_contratos_versoes ON contratos_versoes(contrato_id);");
+                stmt.execute("CREATE INDEX IF NOT EXISTS idx_contratos_auditoria ON contratos_auditoria(contrato_id);");
             } catch (SQLException ignored) {}
 
             // Migração de colunas caso o banco já existisse
             migrarColunasTaxasSeNecessario(stmt);
+
+            // Popula as configurações empresariais padrão caso não existam
+            inicializarConfiguracoesEmpresaSeVazio(conn);
 
             // Popula os cardápios iniciais com tabela de preços caso seja a primeira execução
             popularCardapiosIniciaisSeVazio(conn);
@@ -201,6 +278,55 @@ public class DatabaseManager {
         } catch (SQLException ignored) {
             // Coluna já existe
         }
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN cliente_cpf_cnpj TEXT");
+        } catch (SQLException ignored) {}
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN cliente_rg TEXT");
+        } catch (SQLException ignored) {}
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN cliente_endereco TEXT");
+        } catch (SQLException ignored) {}
+        try {
+            stmt.execute("ALTER TABLE ordens_servico ADD COLUMN cliente_email TEXT");
+        } catch (SQLException ignored) {}
+    }
+
+    private static void inicializarConfiguracoesEmpresaSeVazio(Connection conn) {
+        configurarSeNaoExistir(conn, "empresa.razao_social", "Festalia Buffet & Eventos Ltda");
+        configurarSeNaoExistir(conn, "empresa.nome_fantasia", "Festalia Buffet & Eventos");
+        configurarSeNaoExistir(conn, "empresa.cnpj", "12.345.678/0001-90");
+        configurarSeNaoExistir(conn, "empresa.endereco", "Av. das Festas, 1000 - Jardins, São Paulo - SP");
+        configurarSeNaoExistir(conn, "empresa.telefone", "(11) 3456-7890 / (11) 98765-4321");
+        configurarSeNaoExistir(conn, "empresa.email", "contato@festaliabuffet.com.br");
+        configurarSeNaoExistir(conn, "empresa.representante_nome", "Matheus De Souza");
+        configurarSeNaoExistir(conn, "empresa.representante_cpf", "123.456.789-00");
+        configurarSeNaoExistir(conn, "empresa.cidade_foro", "São Paulo - SP");
+    }
+
+    private static void configurarSeNaoExistir(Connection conn, String chave, String valorPadrao) {
+        String sql = "INSERT OR IGNORE INTO configuracoes (chave, valor) VALUES (?, ?)";
+        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, chave);
+            ps.setString(2, valorPadrao);
+            ps.executeUpdate();
+        } catch (SQLException ignored) {}
+    }
+
+    public static synchronized String gerarProximoNumeroContrato() {
+        int ano = java.time.LocalDate.now().getYear();
+        String sql = "SELECT COUNT(*) FROM contratos";
+        int count = 1;
+        try (Connection conn = getConnection();
+             Statement stmt = conn.createStatement();
+             ResultSet rs = stmt.executeQuery(sql)) {
+            if (rs.next()) {
+                count = rs.getInt(1) + 1;
+            }
+        } catch (SQLException e) {
+            count = (int) (System.currentTimeMillis() % 10000);
+        }
+        return String.format("CTR-%d-%04d", ano, count);
     }
 
     public static void salvarConfiguracao(String chave, String valor) {
