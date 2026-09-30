@@ -1,0 +1,26 @@
+# Diretórios de compilação e empacotamento Maven
+target/
+*.class
+
+# Banco de dados SQLite local de testes / runtime
+*.db
+*.db-journal
+
+# Arquivos de log e saídas de testes
+*.log
+saida_testes/
+saida_pdf_valido/
+
+# IDEs e Editores
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# Arquivos temporários do SO
+Thumbs.db
+Desktop.ini
+.DS_Store
+test_*.bat
