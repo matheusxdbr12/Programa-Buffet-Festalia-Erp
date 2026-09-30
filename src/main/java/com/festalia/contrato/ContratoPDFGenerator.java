@@ -9,6 +9,7 @@ import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.events.Event;
 import com.itextpdf.kernel.events.IEventHandler;
 import com.itextpdf.kernel.events.PdfDocumentEvent;
+import com.itextpdf.kernel.geom.PageSize;
 import com.itextpdf.kernel.geom.Rectangle;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfPage;
@@ -33,6 +34,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -47,14 +49,33 @@ public class ContratoPDFGenerator {
     private static final DeviceRgb COR_CINZA_FUNDO = new DeviceRgb(248, 250, 252);
     private static final DeviceRgb COR_BORDA_SUAVE = new DeviceRgb(226, 232, 240);
 
+    private static String ultimoErro = null;
+
+    public static String getUltimoErro() {
+        return ultimoErro;
+    }
+
+    public static String strSafe(String s, String fallback) {
+        return (s != null && !s.isBlank()) ? s.trim() : fallback;
+    }
+
+    public static String strSafe(String s) {
+        return strSafe(s, "—");
+    }
+
     /**
      * Sobrecarga estática conveniente que prepara a OS, parâmetros e gera o PDF em contratos_pdf/.
      */
     public static String gerarPdfContrato(Contrato contrato, List<?> parcelasObj, boolean abrirAposGerar) {
+        ultimoErro = null;
         try {
             File pastaSaida = new File("contratos_pdf");
             if (!pastaSaida.exists()) {
                 pastaSaida.mkdirs();
+            }
+
+            if (contrato.getDataEmissao() == null) {
+                contrato.setDataEmissao(LocalDate.now());
             }
 
             String nomeLimpo = contrato.getContratanteNome() != null && !contrato.getContratanteNome().isBlank()
@@ -63,34 +84,64 @@ public class ContratoPDFGenerator {
                     ? contrato.getNumeroContrato().replaceAll("[^a-zA-Z0-9_-]", "_") : "NOVO";
             File arquivoDestino = new File(pastaSaida, "Contrato_" + numContratoLimpo + "_" + nomeLimpo + "_v" + contrato.getVersaoAtual() + ".pdf");
 
+            // Se o arquivo já existir e estiver bloqueado/aberto por leitor de PDF/navegador, usa sufixo para não travar
+            if (arquivoDestino.exists()) {
+                boolean bloqueado = false;
+                try (FileOutputStream testFos = new FileOutputStream(arquivoDestino, true)) {
+                    // Arquivo disponível para gravação
+                } catch (Exception exLock) {
+                    bloqueado = true;
+                }
+
+                if (bloqueado) {
+                    int counter = 1;
+                    while (counter <= 99) {
+                        File alt = new File(pastaSaida, "Contrato_" + numContratoLimpo + "_" + nomeLimpo + "_v" + contrato.getVersaoAtual() + "_(" + counter + ").pdf");
+                        boolean altLivre = false;
+                        try (FileOutputStream testFos = new FileOutputStream(alt, true)) {
+                            altLivre = true;
+                        } catch (Exception ignored) {}
+
+                        if (altLivre) {
+                            arquivoDestino = alt;
+                            break;
+                        }
+                        counter++;
+                    }
+                }
+            }
+
             com.festalia.OrdemServicoDAO osDAO = new com.festalia.OrdemServicoDAO();
             OrdemServico os = null;
             if (contrato.getOrdemServicoId() > 0) {
                 os = osDAO.buscarPorId(contrato.getOrdemServicoId());
+            }
+            if (os == null && contrato.getNumeroOS() > 0) {
+                os = osDAO.buscarPorNumeroOS(contrato.getNumeroOS());
             }
 
             if (os == null) {
                 os = new OrdemServico(
                         contrato.getOrdemServicoId(),
                         contrato.getNumeroOS() > 0 ? contrato.getNumeroOS() : Math.max(1, contrato.getOrdemServicoId()),
-                        contrato.getEmpresaRazaoSocial(),
-                        contrato.getEmpresaNomeFantasia(),
+                        strSafe(contrato.getEmpresaRazaoSocial(), "Festalia Buffet & Eventos Ltda"),
+                        strSafe(contrato.getEmpresaNomeFantasia(), "Festalia Buffet"),
                         null,
-                        contrato.getContratanteNome(),
-                        contrato.getContratanteTelefone(),
+                        strSafe(contrato.getContratanteNome(), "Cliente"),
+                        strSafe(contrato.getContratanteTelefone(), ""),
                         contrato.getDataEvento() != null ? contrato.getDataEvento() : LocalDate.now(),
-                        contrato.getLocalEvento() != null && !contrato.getLocalEvento().isBlank() ? contrato.getLocalEvento() : "Espaço Festalia / Conforme OS",
+                        strSafe(contrato.getLocalEvento(), "Espaço Festalia / Conforme OS"),
                         contrato.getNumeroConvidados() > 0 ? contrato.getNumeroConvidados() : 100,
                         contrato.getValorTotal() / Math.max(1, contrato.getNumeroConvidados()),
                         0.0, 0.0,
                         contrato.getValorTotal(),
                         "Confirmado",
                         null,
-                        contrato.getObservacoesEspeciais(),
+                        strSafe(contrato.getObservacoesEspeciais(), ""),
                         null,
                         java.time.LocalTime.of(18, 0),
                         java.time.LocalTime.of(22, 0),
-                        contrato.getTipoEvento(),
+                        strSafe(contrato.getTipoEvento(), "Casamento"),
                         false
                 );
             }
@@ -121,7 +172,13 @@ public class ContratoPDFGenerator {
             contrato.setCaminhoPdf(arquivoDestino.getAbsolutePath());
             return arquivoDestino.getAbsolutePath();
         } catch (Exception ex) {
-            System.err.println("Erro ao gerar PDF do contrato: " + ex.getMessage());
+            String msg = ex.getMessage() != null ? ex.getMessage() : ex.getClass().getSimpleName();
+            if (ex instanceof java.io.FileNotFoundException && (msg.contains("usado por outro processo") || msg.contains("Access is denied") || msg.contains("Acesso negado"))) {
+                ultimoErro = "O arquivo PDF já está aberto em outro programa (como o visualizador de PDF ou navegador).\nPor favor, feche o arquivo antes de gerar.";
+            } else {
+                ultimoErro = ex.getClass().getSimpleName() + ": " + msg;
+            }
+            System.err.println("Erro ao gerar PDF do contrato: " + ultimoErro);
             ex.printStackTrace();
             return null;
         }
@@ -140,13 +197,14 @@ public class ContratoPDFGenerator {
             arquivoDestino.getParentFile().mkdirs();
         }
 
-        ImageData logoWatermark = PDFGenerator.carregarImageDataLogo(os.getCaminhoLogoBuffet());
+        ImageData logoWatermark = os != null ? PDFGenerator.carregarImageDataLogo(os.getCaminhoLogoBuffet()) : null;
 
         try (FileOutputStream fos = new FileOutputStream(arquivoDestino);
              PdfWriter writer = new PdfWriter(fos);
              PdfDocument pdfDoc = new PdfDocument(writer)) {
 
-            Document document = new Document(pdfDoc);
+            // immediateFlush = false garante que todas as páginas permaneçam acessíveis para marca d'água e rodapé
+            Document document = new Document(pdfDoc, PageSize.A4, false);
             document.setMargins(40, 44, 45, 44);
 
             // Handler para paginação no rodapé
@@ -183,7 +241,7 @@ public class ContratoPDFGenerator {
 
         // Logo
         Cell cellLogo = new Cell().setBorder(Border.NO_BORDER).setVerticalAlignment(VerticalAlignment.MIDDLE);
-        ImageData logoData = PDFGenerator.carregarImageDataLogo(os.getCaminhoLogoBuffet());
+        ImageData logoData = os != null ? PDFGenerator.carregarImageDataLogo(os.getCaminhoLogoBuffet()) : null;
         if (logoData != null) {
             Image logo = new Image(logoData).scaleToFit(85, 48);
             cellLogo.add(logo);
@@ -192,10 +250,11 @@ public class ContratoPDFGenerator {
 
         // Nomes e Título
         Cell cellTexto = new Cell().setBorder(Border.NO_BORDER).setVerticalAlignment(VerticalAlignment.MIDDLE);
-        cellTexto.add(new Paragraph(contrato.getEmpresaNomeFantasia() != null && !contrato.getEmpresaNomeFantasia().isBlank()
-                ? contrato.getEmpresaNomeFantasia().toUpperCase() : os.getNomeBuffet().toUpperCase())
+        String nomeEmpresa = strSafe(contrato.getEmpresaNomeFantasia(), os != null ? strSafe(os.getNomeBuffet(), "FESTALIA BUFFET") : "FESTALIA BUFFET");
+        String tituloModelo = contrato.getModeloTipo() != null ? strSafe(contrato.getModeloTipo().getTitulo(), "CONTRATO DE PRESTAÇÃO DE SERVIÇOS") : "CONTRATO DE PRESTAÇÃO DE SERVIÇOS";
+        cellTexto.add(new Paragraph(nomeEmpresa.toUpperCase())
                 .setFontSize(13).setBold().setFontColor(COR_AZUL_FESTALIA));
-        cellTexto.add(new Paragraph(contrato.getModeloTipo().getTitulo().toUpperCase())
+        cellTexto.add(new Paragraph(tituloModelo.toUpperCase())
                 .setFontSize(9).setBold().setFontColor(COR_ESCURA));
         cellTexto.add(new Paragraph("Instrumento Particular de Prestação de Serviços Gastronômicos e Infraestrutura")
                 .setFontSize(7.5f).setFontColor(ColorConstants.GRAY));
@@ -207,9 +266,11 @@ public class ContratoPDFGenerator {
                 .setPadding(6)
                 .setVerticalAlignment(VerticalAlignment.MIDDLE)
                 .setTextAlignment(TextAlignment.RIGHT);
-        cellIdent.add(new Paragraph(contrato.getNumeroContrato()).setFontSize(10).setBold().setFontColor(COR_AZUL_FESTALIA));
-        cellIdent.add(new Paragraph("OS Vinculada: #" + os.getNumeroOS()).setFontSize(8).setBold());
-        cellIdent.add(new Paragraph("Versão: " + contrato.getVersaoAtual() + " • Status: " + contrato.getStatus().getDescricao()).setFontSize(7.5f).setFontColor(COR_ESCURA));
+        cellIdent.add(new Paragraph(strSafe(contrato.getNumeroContrato(), "CONTRATO")).setFontSize(10).setBold().setFontColor(COR_AZUL_FESTALIA));
+        int numOsIdent = os != null ? os.getNumeroOS() : contrato.getNumeroOS();
+        cellIdent.add(new Paragraph("OS Vinculada: #" + numOsIdent).setFontSize(8).setBold());
+        String statusDesc = contrato.getStatus() != null ? contrato.getStatus().getDescricao() : "Gerado";
+        cellIdent.add(new Paragraph("Versão: " + strSafe(contrato.getVersaoAtual(), "1.0") + " • Status: " + statusDesc).setFontSize(7.5f).setFontColor(COR_ESCURA));
         tabCabecalho.addCell(cellIdent);
 
         doc.add(tabCabecalho);
@@ -230,11 +291,11 @@ public class ContratoPDFGenerator {
                 .setBorder(new SolidBorder(COR_BORDA_SUAVE, 1))
                 .setPadding(8);
         cellContratada.add(new Paragraph("CONTRATADA (PRESTADORA DE SERVIÇOS)").setFontSize(8.5f).setBold().setFontColor(COR_AZUL_FESTALIA));
-        cellContratada.add(new Paragraph(c.getEmpresaRazaoSocial()).setFontSize(9.5f).setBold());
-        cellContratada.add(new Paragraph("CNPJ: " + c.getEmpresaCnpj()).setFontSize(8));
-        cellContratada.add(new Paragraph("Endereço: " + c.getEmpresaEndereco()).setFontSize(8));
+        cellContratada.add(new Paragraph(strSafe(c.getEmpresaRazaoSocial(), "Festalia Buffet & Eventos Ltda")).setFontSize(9.5f).setBold());
+        cellContratada.add(new Paragraph("CNPJ: " + strSafe(c.getEmpresaCnpj(), "—")).setFontSize(8));
+        cellContratada.add(new Paragraph("Endereço: " + strSafe(c.getEmpresaEndereco(), "—")).setFontSize(8));
         if (c.getEmpresaTelefone() != null && !c.getEmpresaTelefone().isBlank()) {
-            cellContratada.add(new Paragraph("Tel: " + c.getEmpresaTelefone() + " | E-mail: " + c.getEmpresaEmail()).setFontSize(7.5f));
+            cellContratada.add(new Paragraph("Tel: " + strSafe(c.getEmpresaTelefone()) + " | E-mail: " + strSafe(c.getEmpresaEmail())).setFontSize(7.5f));
         }
         tabPartes.addCell(cellContratada);
 
@@ -244,11 +305,11 @@ public class ContratoPDFGenerator {
                 .setBorder(new SolidBorder(COR_BORDA_SUAVE, 1))
                 .setPadding(8);
         cellContratante.add(new Paragraph("CONTRATANTE (TOMADOR DOS SERVIÇOS)").setFontSize(8.5f).setBold().setFontColor(COR_AZUL_FESTALIA));
-        cellContratante.add(new Paragraph(c.getContratanteNome()).setFontSize(9.5f).setBold());
-        cellContratante.add(new Paragraph("CPF/CNPJ: " + c.getContratanteCpfCnpj() + (c.getContratanteRg() != null && !c.getContratanteRg().isBlank() ? " | RG: " + c.getContratanteRg() : "")).setFontSize(8));
-        cellContratante.add(new Paragraph("Endereço: " + (c.getContratanteEndereco() != null && !c.getContratanteEndereco().isBlank() ? c.getContratanteEndereco() : "Conforme cadastro na OS")).setFontSize(8));
+        cellContratante.add(new Paragraph(strSafe(c.getContratanteNome(), "—")).setFontSize(9.5f).setBold());
+        cellContratante.add(new Paragraph("CPF/CNPJ: " + strSafe(c.getContratanteCpfCnpj(), "—") + (c.getContratanteRg() != null && !c.getContratanteRg().isBlank() ? " | RG: " + c.getContratanteRg() : "")).setFontSize(8));
+        cellContratante.add(new Paragraph("Endereço: " + strSafe(c.getContratanteEndereco(), "Conforme cadastro na OS")).setFontSize(8));
         if (c.getContratanteTelefone() != null && !c.getContratanteTelefone().isBlank()) {
-            cellContratante.add(new Paragraph("Tel: " + c.getContratanteTelefone() + (c.getContratanteEmail() != null && !c.getContratanteEmail().isBlank() ? " | E-mail: " + c.getContratanteEmail() : "")).setFontSize(7.5f));
+            cellContratante.add(new Paragraph("Tel: " + strSafe(c.getContratanteTelefone()) + (c.getContratanteEmail() != null && !c.getContratanteEmail().isBlank() ? " | E-mail: " + strSafe(c.getContratanteEmail()) : "")).setFontSize(7.5f));
         }
         tabPartes.addCell(cellContratante);
 
@@ -259,10 +320,12 @@ public class ContratoPDFGenerator {
         Table tab = new Table(UnitValue.createPercentArray(new float[]{25, 25, 30, 20})).useAllAvailableWidth();
         tab.setMarginBottom(12);
 
-        tab.addCell(criarCelulaResumo("Tipo do Evento", os.getTipoEvento()));
-        tab.addCell(criarCelulaResumo("Data da Realização", os.getDataEventoFormatada()));
-        tab.addCell(criarCelulaResumo("Horário Contratado", os.getHorarioInicioFormatado() + " às " + os.getHorarioFimFormatado()));
-        tab.addCell(criarCelulaResumo("Nº de Convidados", os.getQuantidadeConvidados() + " pessoas"));
+        tab.addCell(criarCelulaResumo("Tipo do Evento", strSafe(os != null ? os.getTipoEvento() : c.getTipoEvento(), "Evento")));
+        tab.addCell(criarCelulaResumo("Data da Realização", strSafe(os != null ? os.getDataEventoFormatada() : c.getDataEventoFormatada(), "—")));
+        String hor = (os != null ? (strSafe(os.getHorarioInicioFormatado(), "18:00") + " às " + strSafe(os.getHorarioFimFormatado(), "22:00")) : strSafe(c.getHorarioEvento(), "Conforme OS"));
+        tab.addCell(criarCelulaResumo("Horário Contratado", hor));
+        int convidados = os != null ? os.getQuantidadeConvidados() : c.getNumeroConvidados();
+        tab.addCell(criarCelulaResumo("Nº de Convidados", convidados + " pessoas"));
 
         doc.add(tab);
     }
@@ -273,8 +336,8 @@ public class ContratoPDFGenerator {
                 .setBorder(new SolidBorder(COR_BORDA_SUAVE, 0.8f))
                 .setPadding(6)
                 .setTextAlignment(TextAlignment.CENTER);
-        cell.add(new Paragraph(label).setFontSize(7).setBold().setFontColor(ColorConstants.GRAY));
-        cell.add(new Paragraph(valor).setFontSize(8.5f).setBold().setFontColor(COR_ESCURA));
+        cell.add(new Paragraph(strSafe(label, "Informação")).setFontSize(7).setBold().setFontColor(ColorConstants.GRAY));
+        cell.add(new Paragraph(strSafe(valor, "A definir")).setFontSize(8.5f).setBold().setFontColor(COR_ESCURA));
         return cell;
     }
 
@@ -282,9 +345,9 @@ public class ContratoPDFGenerator {
                                            List<ParcelaOS> parcelas, ContratoTemplateEngine.ParametrosContrato params) {
         int idx = 1;
         for (ClausulaContrato cl : clausulas) {
-            if (!cl.isAtiva()) continue;
+            if (cl == null || !cl.isAtiva()) continue;
 
-            Paragraph pTitulo = new Paragraph(String.format("CLÁUSULA %dª — %s", idx++, cl.getTitulo().toUpperCase()))
+            Paragraph pTitulo = new Paragraph(String.format("CLÁUSULA %dª — %s", idx++, strSafe(cl.getTitulo(), "DISPOSIÇÃO").toUpperCase()))
                     .setFontSize(9f)
                     .setBold()
                     .setFontColor(COR_AZUL_FESTALIA)
@@ -293,7 +356,7 @@ public class ContratoPDFGenerator {
                     .setKeepWithNext(true);
             doc.add(pTitulo);
 
-            Paragraph pConteudo = new Paragraph(cl.getConteudo())
+            Paragraph pConteudo = new Paragraph(strSafe(cl.getConteudo(), ""))
                     .setFontSize(8.5f)
                     .setTextAlignment(TextAlignment.JUSTIFIED)
                     .setFontColor(COR_ESCURA)
@@ -301,7 +364,7 @@ public class ContratoPDFGenerator {
             doc.add(pConteudo);
 
             // Se for a cláusula de preço e pagamento, insere a tabela do cronograma
-            if ("VALOR_PAGAMENTO".equalsIgnoreCase(cl.getChave()) && params.incluirCronogramaDetalhado && parcelas != null && !parcelas.isEmpty()) {
+            if ("VALOR_PAGAMENTO".equalsIgnoreCase(cl.getChave()) && params != null && params.incluirCronogramaDetalhado && parcelas != null && !parcelas.isEmpty()) {
                 adicionarTabelaCronograma(doc, parcelas);
             }
         }
@@ -318,11 +381,12 @@ public class ContratoPDFGenerator {
         tab.addHeaderCell(criarHeaderTabela("Valor"));
 
         for (ParcelaOS p : parcelas) {
+            if (p == null) continue;
             Cell cNum = new Cell().setPadding(4).setTextAlignment(TextAlignment.CENTER).setFontSize(8).add(new Paragraph("#" + p.getNumeroParcela()));
-            Cell cDesc = new Cell().setPadding(4).setFontSize(8).add(new Paragraph(p.getDescricao()));
-            Cell cVenc = new Cell().setPadding(4).setTextAlignment(TextAlignment.CENTER).setFontSize(8).add(new Paragraph(p.getDataVencimentoFormatada()));
-            Cell cForma = new Cell().setPadding(4).setTextAlignment(TextAlignment.CENTER).setFontSize(8).add(new Paragraph(p.getFormaPagamentoSugerida()));
-            Cell cVal = new Cell().setPadding(4).setTextAlignment(TextAlignment.RIGHT).setFontSize(8).setBold().add(new Paragraph(p.getValorFormatado()));
+            Cell cDesc = new Cell().setPadding(4).setFontSize(8).add(new Paragraph(strSafe(p.getDescricao(), "Parcela")));
+            Cell cVenc = new Cell().setPadding(4).setTextAlignment(TextAlignment.CENTER).setFontSize(8).add(new Paragraph(strSafe(p.getDataVencimentoFormatada(), "—")));
+            Cell cForma = new Cell().setPadding(4).setTextAlignment(TextAlignment.CENTER).setFontSize(8).add(new Paragraph(strSafe(p.getFormaPagamentoSugerida(), "A combinar")));
+            Cell cVal = new Cell().setPadding(4).setTextAlignment(TextAlignment.RIGHT).setFontSize(8).setBold().add(new Paragraph(strSafe(p.getValorFormatado(), "R$ 0,00")));
 
             tab.addCell(cNum);
             tab.addCell(cDesc);
@@ -343,14 +407,15 @@ public class ContratoPDFGenerator {
                 .setFontSize(8)
                 .setBold()
                 .setFontColor(ColorConstants.WHITE)
-                .add(new Paragraph(texto));
+                .add(new Paragraph(strSafe(texto, "—")));
     }
 
     private static void adicionarBlocoAssinaturas(Document doc, Contrato c, boolean incluirTestemunhas) {
+        String foro = strSafe(c.getEmpresaCidadeForo(), "São Paulo - SP");
+        String dataEmissao = strSafe(c.getDataEmissaoFormatada(), LocalDate.now().format(DateTimeFormatter.ofPattern("dd/MM/yyyy")));
         Paragraph pEncerramento = new Paragraph(String.format(
                 "\nE, por estarem assim plenamente justas, acordadas e contratadas, as partes firmam o presente instrumento em 2 (duas) vias de igual teor e forma.\n%s, %s.",
-                (c.getEmpresaCidadeForo() != null && !c.getEmpresaCidadeForo().isBlank() ? c.getEmpresaCidadeForo() : "São Paulo - SP"),
-                c.getDataEmissaoFormatada()
+                foro, dataEmissao
         )).setFontSize(8.5f).setTextAlignment(TextAlignment.JUSTIFIED).setMarginBottom(18).setKeepWithNext(true);
         doc.add(pEncerramento);
 
@@ -361,15 +426,16 @@ public class ContratoPDFGenerator {
 
         Cell assContratada = new Cell().setBorder(Border.NO_BORDER).setTextAlignment(TextAlignment.CENTER);
         assContratada.add(new Paragraph("_____________________________________________").setFontSize(9));
-        assContratada.add(new Paragraph(c.getEmpresaNomeFantasia() != null ? c.getEmpresaNomeFantasia() : c.getEmpresaRazaoSocial()).setFontSize(8.5f).setBold());
-        assContratada.add(new Paragraph("CONTRATADA • CNPJ: " + c.getEmpresaCnpj()).setFontSize(7.5f).setFontColor(ColorConstants.GRAY));
+        String nomeContratada = strSafe(c.getEmpresaNomeFantasia(), strSafe(c.getEmpresaRazaoSocial(), "CONTRATADA"));
+        assContratada.add(new Paragraph(nomeContratada).setFontSize(8.5f).setBold());
+        assContratada.add(new Paragraph("CONTRATADA • CNPJ: " + strSafe(c.getEmpresaCnpj(), "—")).setFontSize(7.5f).setFontColor(ColorConstants.GRAY));
 
         Cell meio = new Cell().setBorder(Border.NO_BORDER);
 
         Cell assContratante = new Cell().setBorder(Border.NO_BORDER).setTextAlignment(TextAlignment.CENTER);
         assContratante.add(new Paragraph("_____________________________________________").setFontSize(9));
-        assContratante.add(new Paragraph(c.getContratanteNome()).setFontSize(8.5f).setBold());
-        assContratante.add(new Paragraph("CONTRATANTE • CPF/CNPJ: " + c.getContratanteCpfCnpj()).setFontSize(7.5f).setFontColor(ColorConstants.GRAY));
+        assContratante.add(new Paragraph(strSafe(c.getContratanteNome(), "CONTRATANTE")).setFontSize(8.5f).setBold());
+        assContratante.add(new Paragraph("CONTRATANTE • CPF/CNPJ: " + strSafe(c.getContratanteCpfCnpj(), "—")).setFontSize(7.5f).setFontColor(ColorConstants.GRAY));
 
         tabAss.addCell(assContratada);
         tabAss.addCell(meio);
@@ -400,26 +466,32 @@ public class ContratoPDFGenerator {
     }
 
     private static void aplicarMarcaDaguaNoFundo(PdfDocument pdfDoc, ImageData logoWatermark) {
-        int totalPaginas = pdfDoc.getNumberOfPages();
-        for (int p = 1; p <= totalPaginas; p++) {
-            PdfPage page = pdfDoc.getPage(p);
-            Rectangle pageSize = page.getPageSize();
+        if (logoWatermark == null) return;
+        try {
+            int totalPaginas = pdfDoc.getNumberOfPages();
+            for (int p = 1; p <= totalPaginas; p++) {
+                PdfPage page = pdfDoc.getPage(p);
+                if (page == null || page.isFlushed()) continue;
+                Rectangle pageSize = page.getPageSize();
 
-            PdfCanvas canvas = new PdfCanvas(page.newContentStreamBefore(), page.getResources(), pdfDoc);
-            canvas.saveState();
+                PdfCanvas canvas = new PdfCanvas(page.newContentStreamBefore(), page.getResources(), pdfDoc);
+                canvas.saveState();
 
-            PdfExtGState gs = new PdfExtGState();
-            gs.setFillOpacity(0.06f); // 6% sutil e elegante
-            canvas.setExtGState(gs);
+                PdfExtGState gs = new PdfExtGState();
+                gs.setFillOpacity(0.06f); // 6% sutil e elegante
+                canvas.setExtGState(gs);
 
-            float imgLargura = 420f;
-            float imgAltura = 340f;
-            float x = (pageSize.getWidth() - imgLargura) / 2f;
-            float y = (pageSize.getHeight() - imgAltura) / 2f;
+                float imgLargura = 420f;
+                float imgAltura = 340f;
+                float x = (pageSize.getWidth() - imgLargura) / 2f;
+                float y = (pageSize.getHeight() - imgAltura) / 2f;
 
-            canvas.addImageFittedIntoRectangle(logoWatermark, new Rectangle(x, y, imgLargura, imgAltura), false);
-            canvas.restoreState();
-            canvas.release();
+                canvas.addImageFittedIntoRectangle(logoWatermark, new Rectangle(x, y, imgLargura, imgAltura), false);
+                canvas.restoreState();
+                canvas.release();
+            }
+        } catch (Exception exWatermark) {
+            System.err.println("Aviso: Falha ao desenhar marca d'água no contrato: " + exWatermark.getMessage());
         }
     }
 
@@ -435,33 +507,28 @@ public class ContratoPDFGenerator {
 
         @Override
         public void handleEvent(Event event) {
-            PdfDocumentEvent docEvent = (PdfDocumentEvent) event;
-            PdfDocument pdfDoc = docEvent.getDocument();
-            PdfPage page = docEvent.getPage();
-            int pageNum = pdfDoc.getPageNumber(page);
+            try {
+                PdfDocumentEvent docEvent = (PdfDocumentEvent) event;
+                PdfDocument pdfDoc = docEvent.getDocument();
+                PdfPage page = docEvent.getPage();
+                if (page == null || page.isFlushed()) return;
+                int pageNum = pdfDoc.getPageNumber(page);
 
-            PdfCanvas canvas = new PdfCanvas(page.newContentStreamAfter(), page.getResources(), pdfDoc);
-            Canvas c = new Canvas(canvas, page.getPageSize());
+                PdfCanvas canvas = new PdfCanvas(page.newContentStreamAfter(), page.getResources(), pdfDoc);
+                Canvas c = new Canvas(canvas, page.getPageSize());
 
-            float y = 20;
-            float margin = 44;
-            float width = page.getPageSize().getWidth() - (margin * 2);
+                float y = 20;
+                float margin = 44;
+                String numContrato = strSafe(contrato.getNumeroContrato(), "CONTRATO");
+                String versao = strSafe(contrato.getVersaoAtual(), "1.0");
 
-            Table footer = new Table(UnitValue.createPercentArray(new float[]{50, 50})).setWidth(width);
-            footer.setBorder(Border.NO_BORDER);
-
-            Cell cEsq = new Cell().setBorder(Border.NO_BORDER).setFontSize(7.5f).setFontColor(ColorConstants.GRAY);
-            cEsq.add(new Paragraph(contrato.getNumeroContrato() + " • Versão " + contrato.getVersaoAtual()));
-
-            Cell cDir = new Cell().setBorder(Border.NO_BORDER).setFontSize(7.5f).setFontColor(ColorConstants.GRAY).setTextAlignment(TextAlignment.RIGHT);
-            cDir.add(new Paragraph("Página " + pageNum));
-
-            footer.addCell(cEsq);
-            footer.addCell(cDir);
-
-            c.showTextAligned(new Paragraph(contrato.getNumeroContrato() + " (Versão " + contrato.getVersaoAtual() + ")"), margin, y, TextAlignment.LEFT);
-            c.showTextAligned(new Paragraph("Página " + pageNum), page.getPageSize().getWidth() - margin, y, TextAlignment.RIGHT);
-            c.close();
+                c.showTextAligned(new Paragraph(numContrato + " (Versão " + versao + ")").setFontSize(7.5f).setFontColor(ColorConstants.GRAY), margin, y, TextAlignment.LEFT);
+                c.showTextAligned(new Paragraph("Página " + pageNum).setFontSize(7.5f).setFontColor(ColorConstants.GRAY), page.getPageSize().getWidth() - margin, y, TextAlignment.RIGHT);
+                c.close();
+            } catch (Exception exFooter) {
+                System.err.println("Aviso no rodapé do contrato: " + exFooter.getMessage());
+            }
         }
     }
 }
+

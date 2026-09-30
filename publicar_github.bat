@@ -30,7 +30,7 @@ echo [3/5] Inicializando repositorio e commit...
 if not exist ".git" git init
 git branch -M main
 git add -A
-git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão"
+git commit -m "fix(contrato): v2.1.7 - Correção de flush e map nulo no iText 7 para geração de PDF de contratos"
 
 echo [4/5] Publicando no GitHub...
 git remote remove origin 2>nul

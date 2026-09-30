@@ -1050,7 +1050,12 @@ public class GerarRevisarContratoDialog extends JDialog {
 
             dispose();
         } else {
-            JOptionPane.showMessageDialog(this, "Erro ao gerar o documento PDF do contrato.", "Erro", JOptionPane.ERROR_MESSAGE);
+            String motivo = ContratoPDFGenerator.getUltimoErro();
+            String msg = "Erro ao gerar o documento PDF do contrato.";
+            if (motivo != null && !motivo.isBlank()) {
+                msg += "\n\nDetalhes:\n" + motivo;
+            }
+            JOptionPane.showMessageDialog(this, msg, "Erro", JOptionPane.ERROR_MESSAGE);
         }
     }
 

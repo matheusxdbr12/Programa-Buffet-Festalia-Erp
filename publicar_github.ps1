@@ -52,10 +52,10 @@ $status = git status --porcelain
 $hasCommits = git rev-parse --verify HEAD 2>$null
 
 if ($status) {
-    Write-Host "  -> Criando commit v2.1.4 (Alocação de OS para Contratos, validações e memórias)..." -ForegroundColor Gray
-    git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão"
+    Write-Host "  -> Criando commit v2.1.7 (Fix flush iText 7, marca d'água multipágina e memórias)..." -ForegroundColor Gray
+    git commit -m "fix(contrato): v2.1.7 - Correção de flush e map nulo no iText 7 para geração de PDF de contratos"
 } elseif (-not $hasCommits) {
-    git commit -m "feat(contrato): v2.1.4 - Seletor e alocação de OS na geração de contratos, correção de validação e memórias de versão" --allow-empty
+    git commit -m "fix(contrato): v2.1.7 - Correção de flush e map nulo no iText 7 para geração de PDF de contratos" --allow-empty
 } else {
     Write-Host "  -> Nenhuma alteracao pendente. Ultimo commit preservado." -ForegroundColor Gray
 }

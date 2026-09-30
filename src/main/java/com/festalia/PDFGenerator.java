@@ -7,6 +7,7 @@ import com.itextpdf.kernel.colors.DeviceRgb;
 import com.itextpdf.kernel.events.Event;
 import com.itextpdf.kernel.events.IEventHandler;
 import com.itextpdf.kernel.events.PdfDocumentEvent;
+import com.itextpdf.kernel.geom.PageSize;
 import com.itextpdf.kernel.geom.Rectangle;
 import com.itextpdf.kernel.pdf.PdfDocument;
 import com.itextpdf.kernel.pdf.PdfPage;
@@ -72,7 +73,8 @@ public class PDFGenerator {
              PdfWriter writer = new PdfWriter(fos);
              PdfDocument pdfDoc = new PdfDocument(writer)) {
 
-            Document document = new Document(pdfDoc);
+            // immediateFlush = false garante que todas as páginas permaneçam acessíveis para a marca d'água
+            Document document = new Document(pdfDoc, PageSize.A4, false);
             document.setMargins(36, 36, 36, 36);
 
             // 1. Cabeçalho Personalizável do Buffet
@@ -264,28 +266,34 @@ public class PDFGenerator {
      * Aplica a logo do Buffet como Marca D'Água semitransparente ao fundo de todas as páginas da OS.
      */
     private static void aplicarMarcaDaguaNoFundo(PdfDocument pdfDoc, ImageData logoWatermark) {
-        int totalPaginas = pdfDoc.getNumberOfPages();
-        for (int p = 1; p <= totalPaginas; p++) {
-            PdfPage page = pdfDoc.getPage(p);
-            Rectangle pageSize = page.getPageSize();
+        if (logoWatermark == null) return;
+        try {
+            int totalPaginas = pdfDoc.getNumberOfPages();
+            for (int p = 1; p <= totalPaginas; p++) {
+                PdfPage page = pdfDoc.getPage(p);
+                if (page == null || page.isFlushed()) continue;
+                Rectangle pageSize = page.getPageSize();
 
-            // newContentStreamBefore insere o stream gráfico no plano de fundo, atrás das tabelas e textos
-            PdfCanvas canvas = new PdfCanvas(page.newContentStreamBefore(), page.getResources(), pdfDoc);
-            canvas.saveState();
+                // newContentStreamBefore insere o stream gráfico no plano de fundo, atrás das tabelas e textos
+                PdfCanvas canvas = new PdfCanvas(page.newContentStreamBefore(), page.getResources(), pdfDoc);
+                canvas.saveState();
 
-            // Opacidade calibrada em 18% (0.18f): translúcida, nítida e visível sem prejudicar a leitura
-            PdfExtGState gs = new PdfExtGState();
-            gs.setFillOpacity(0.18f);
-            canvas.setExtGState(gs);
+                // Opacidade calibrada em 18% (0.18f): translúcida, nítida e visível sem prejudicar a leitura
+                PdfExtGState gs = new PdfExtGState();
+                gs.setFillOpacity(0.18f);
+                canvas.setExtGState(gs);
 
-            float imgLargura = 420f;
-            float imgAltura = 340f;
-            float x = (pageSize.getWidth() - imgLargura) / 2f;
-            float y = (pageSize.getHeight() - imgAltura) / 2f;
+                float imgLargura = 420f;
+                float imgAltura = 340f;
+                float x = (pageSize.getWidth() - imgLargura) / 2f;
+                float y = (pageSize.getHeight() - imgAltura) / 2f;
 
-            canvas.addImageFittedIntoRectangle(logoWatermark, new Rectangle(x, y, imgLargura, imgAltura), false);
-            canvas.restoreState();
-            canvas.release(); // Libera e descarrega os bytes no stream do documento PDF
+                canvas.addImageFittedIntoRectangle(logoWatermark, new Rectangle(x, y, imgLargura, imgAltura), false);
+                canvas.restoreState();
+                canvas.release(); // Libera e descarrega os bytes no stream do documento PDF
+            }
+        } catch (Exception exWatermark) {
+            System.err.println("Aviso: Falha ao desenhar marca d'água na OS: " + exWatermark.getMessage());
         }
     }
 
